@@ -1,5 +1,7 @@
 # S3IO
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/jobstoit/s3io.svg)](https://pkg.go.dev/github.com/jobstoit/s3io)
+
 An abstraction layer on top of the s3 sdk to do io read/write opperations on s3 objects
 
 ```go

@@ -245,7 +245,7 @@ func getTestBucket() (*Bucket, error) {
 		WithBucketCredentials(accessKey, secretKey),
 		WithBucketRetries(3),
 		WithBucketCreateIfNotExists(),
-		WithBucketLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		WithBucketLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: true,
 			Level:     slog.LevelDebug,
 		}))),
