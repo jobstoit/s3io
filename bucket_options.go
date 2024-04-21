@@ -118,7 +118,7 @@ func bucketExists(ctx context.Context, cli *s3.Client, name string) (bool, error
 		var apiError smithy.APIError
 		if errors.As(err, &apiError) {
 			switch apiError.(type) {
-			case *types.NoSuchBucket:
+			case *types.NotFound:
 				return false, nil
 			default:
 				return false, apiError
