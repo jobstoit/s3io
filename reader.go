@@ -1,0 +1,213 @@
+package s3io
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+)
+
+// ObjectReader is an io.Reader implementation for an S3 Object
+type ObjectReader struct {
+	ctx         context.Context
+	cli         *s3.Client
+	bucket      string
+	key         string
+	rd          *io.PipeReader
+	logger      *slog.Logger
+	retries     int
+	chunkSize   int
+	concurrency int
+}
+
+type ReaderOption func(*ObjectReader) error
+
+func ReaderOptions(ops ...ReaderOption) ReaderOption {
+	return func(r *ObjectReader) error {
+		for _, op := range ops {
+			if err := op(r); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+}
+
+// Read is the io.Reader implementation for the ObjectReader
+func (r *ObjectReader) Read(p []byte) (int, error) {
+	if r.rd == nil {
+		if err := r.preRead(); err != nil {
+			return 0, err
+		}
+	}
+
+	c, err := r.rd.Read(p)
+	if err != nil && err == io.ErrClosedPipe {
+		err = fs.ErrClosed
+	}
+
+	return c, err
+}
+
+func (r *ObjectReader) preRead() error {
+	ctx := r.ctx
+	rd, wr := io.Pipe()
+
+	r.rd = rd
+
+	res, err := r.cli.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &r.bucket,
+		Key:    &r.key,
+	})
+	if err != nil {
+		var apiError smithy.APIError
+		if errors.As(err, &apiError) {
+			switch apiError.(type) {
+			case *types.NotFound:
+				rd.CloseWithError(io.EOF)
+
+				return fs.ErrNotExist
+			default:
+				return apiError
+			}
+		}
+	}
+
+	contentLen := *res.ContentLength
+
+	r.logger.Debug("pre read", slog.Int64("content-length", contentLen))
+	cl := newConcurrencyLock(r.concurrency)
+
+	nextLock := make(chan struct{}, 1)
+
+	go r.getChunk(ctx, wr, cl, nextLock, 0, contentLen)
+	defer close(nextLock)
+
+	return nil
+}
+
+func (r *ObjectReader) getChunk(
+	ctx context.Context,
+	wr *io.PipeWriter,
+	cl *concurrencyLock,
+	sequenceLock chan struct{},
+	start, contentLen int64,
+) {
+	if start == contentLen+1 { // EOF
+		defer cl.Close()
+
+		select {
+		case <-ctx.Done():
+		case <-sequenceLock:
+			wr.CloseWithError(io.EOF)
+		}
+
+		return
+	}
+
+	cl.Lock()
+	defer cl.Unlock()
+
+	end := start + int64(r.chunkSize)
+	if end > contentLen {
+		end = contentLen
+	}
+
+	nextLock := make(chan struct{}, 1)
+	defer close(nextLock)
+
+	go r.getChunk(ctx, wr, cl, nextLock, end+1, contentLen)
+
+	res, err := r.getObject(ctx, start, end)
+	if err != nil {
+		wr.CloseWithError(err)
+		return
+	}
+
+	defer res.Body.Close()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-sequenceLock:
+		if _, err := io.Copy(wr, res.Body); err != nil && err != io.EOF {
+			wr.CloseWithError(err)
+		}
+
+		r.logger.DebugContext(ctx, "chunk read",
+			slog.Group("chunk", slog.Int64("start", start), slog.Int64("end", end), slog.Int64("content_lenght", contentLen)),
+		)
+	}
+}
+
+func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.GetObjectOutput, error) {
+	r.logger.DebugContext(ctx, "getting chunk", slog.Group("chunk", slog.Int64("start", start), slog.Int64("end", end)))
+
+	byteRange := fmt.Sprintf("bytes=%d-%d", start, end)
+	input := &s3.GetObjectInput{
+		Bucket: &r.bucket,
+		Key:    &r.key,
+		Range:  &byteRange,
+	}
+
+	var res *s3.GetObjectOutput
+	var err error
+
+	for range r.retries {
+		res, err = r.cli.GetObject(ctx, input)
+		if err == nil {
+			return res, nil
+		}
+	}
+
+	return nil, err
+}
+
+/*
+ * Options
+ */
+
+// WithReaderLogger sets the logger for this reader
+func WithReaderLogger(logger *slog.Logger) ReaderOption {
+	return func(r *ObjectReader) error {
+		if logger != nil {
+			r.logger = logger
+		}
+
+		return nil
+	}
+}
+
+// WithReaderChunkSize sets the chunksize for this reader
+func WithReaderChunkSize(size uint) ReaderOption {
+	return func(r *ObjectReader) error {
+		r.chunkSize = int(size)
+
+		return nil
+	}
+}
+
+// WithReaderConcurrency set the concurency amount for this reader
+func WithReaderConcurrency(i uint8) ReaderOption {
+	return func(r *ObjectReader) error {
+		r.concurrency = int(i)
+
+		return nil
+	}
+}
+
+// WithReaderRetries sets the retry count for this reader
+func WithReaderRetries(i uint8) ReaderOption {
+	return func(r *ObjectReader) error {
+		r.retries = int(i)
+
+		return nil
+	}
+}
