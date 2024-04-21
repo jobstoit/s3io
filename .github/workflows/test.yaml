@@ -1,0 +1,41 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: local
+      AWS_ACCESS_KEY_ID: 'accessKey'
+      AWS_SECRET_ACCESS_KEY: 'secretKey'
+      AWS_S3_ENDPOINT: 'http://localhost:9000'
+    services:
+      minio:
+        image: minio/minio
+        env:
+          MINIO_ROOT_USER: 'accessKey'
+          MINIO_ROOT_PASSWORD: 'secretKey'
+        ports:
+          - 9000:9000
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: go.sum
+
+
+    - name: Test
+      run: go test -v ./...
