@@ -21,9 +21,9 @@ type ObjectReader struct {
 	key         string
 	rd          *io.PipeReader
 	logger      *slog.Logger
-	retries     int
 	chunkSize   int
 	concurrency int
+	s3Opts      []func(*s3.Options)
 }
 
 // NewObjectReader returns a new ObjectReader to do io.Reader opperations on your s3 object
@@ -34,7 +34,6 @@ func NewObjectReader(ctx context.Context, cli *s3.Client, bucketName, key string
 		bucket:      bucketName,
 		key:         key,
 		chunkSize:   DefaultChunkSize,
-		retries:     defaultRetries,
 		concurrency: defaultConcurrency,
 		logger:      noopLogger,
 	}
@@ -90,7 +89,7 @@ func (r *ObjectReader) preRead() error {
 	res, err := r.cli.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: &r.bucket,
 		Key:    &r.key,
-	})
+	}, r.s3Opts...)
 	if err != nil {
 		var apiError smithy.APIError
 		if errors.As(err, &apiError) {
@@ -182,17 +181,7 @@ func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.Get
 		Range:  &byteRange,
 	}
 
-	var res *s3.GetObjectOutput
-	var err error
-
-	for range r.retries {
-		res, err = r.cli.GetObject(ctx, input)
-		if err == nil {
-			return res, nil
-		}
-	}
-
-	return nil, err
+	return r.cli.GetObject(ctx, input, r.s3Opts...)
 }
 
 /*
@@ -231,7 +220,16 @@ func WithReaderConcurrency(i uint8) ObjectReaderOption {
 // WithReaderRetries sets the retry count for this reader
 func WithReaderRetries(i uint8) ObjectReaderOption {
 	return func(r *ObjectReader) error {
-		r.retries = int(i)
+		r.s3Opts = append(r.s3Opts, withS3Retries(int(i)))
+
+		return nil
+	}
+}
+
+// WithReaderS3Options adds s3 options to the reader opperations
+func WithReaderS3Options(opts ...func(*s3.Options)) ObjectReaderOption {
+	return func(r *ObjectReader) error {
+		r.s3Opts = append(r.s3Opts, opts...)
 
 		return nil
 	}

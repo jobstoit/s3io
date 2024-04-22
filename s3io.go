@@ -4,6 +4,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 const (
@@ -40,4 +43,12 @@ func (c *concurrencyLock) Unlock() {
 
 func (c *concurrencyLock) Close() {
 	close(c.l)
+}
+
+func withS3Retries(count int) func(*s3.Options) {
+	return func(o *s3.Options) {
+		o.Retryer = retry.NewStandard(func(ro *retry.StandardOptions) {
+			ro.MaxAttempts = count
+		})
+	}
 }
