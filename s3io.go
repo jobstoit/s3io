@@ -2,14 +2,23 @@ package s3io
 
 import (
 	"errors"
+	"io"
+	"log/slog"
 )
 
 const (
 	MinChunkSize     = 1024 * 1024 * 5
-	DefaultChunkSize = 1024 * 1024 * 5
+	DefaultChunkSize = MinChunkSize
+
+	defaultRetries     = 5
+	defaultConcurrency = 5
 )
 
-var ErrMinChunkSize = errors.New("given value is less than minimum chunksize of 5mb")
+var (
+	ErrMinChunkSize = errors.New("given value is less than minimum chunksize of 5mb")
+
+	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+)
 
 type concurrencyLock struct {
 	l chan struct{}

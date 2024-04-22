@@ -3,6 +3,7 @@ package s3io
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+// ObjectWriter is an io.WriteCloser implementation for an s3 Object
 type ObjectWriter struct {
 	ctx         context.Context
 	cli         *s3.Client
@@ -30,11 +32,35 @@ type ObjectWriter struct {
 	closingErr chan error
 }
 
-type WriterOption func(*ObjectWriter) error
+// NewObjectWriter returns a new ObjectWriter to do io.Writer opperations on your s3 object
+func NewObjectWriter(ctx context.Context, cli *s3.Client, bucketName, key string, opts ...ObjectWriterOption) (*ObjectWriter, error) {
+	wr := &ObjectWriter{
+		ctx:         ctx,
+		cli:         cli,
+		bucket:      bucketName,
+		key:         key,
+		chunkSize:   DefaultChunkSize,
+		retries:     defaultRetries,
+		concurrency: defaultConcurrency,
+		logger:      noopLogger,
 
-func WriterOptions(ops ...WriterOption) WriterOption {
+		closingErr: make(chan error, 1),
+	}
+
+	if err := ObjectWriterOptions(opts...)(wr); err != nil {
+		return nil, err
+	}
+
+	return wr, nil
+}
+
+// ObjectWriterOption is an option for the given write operation
+type ObjectWriterOption func(*ObjectWriter) error
+
+// ObjectWriterOptions is a collection of ObjectWriterOption's
+func ObjectWriterOptions(opts ...ObjectWriterOption) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
-		for _, op := range ops {
+		for _, op := range opts {
 			if err := op(w); err != nil {
 				return err
 			}
@@ -45,6 +71,8 @@ func WriterOptions(ops ...WriterOption) WriterOption {
 }
 
 // Write is the io.Writer implementation of the ObjectWriter
+//
+// The object is stored when the Close method is called.
 func (w *ObjectWriter) Write(p []byte) (int, error) {
 	if w.wr == nil {
 		if err := w.preWrite(); err != nil {
@@ -55,6 +83,14 @@ func (w *ObjectWriter) Write(p []byte) (int, error) {
 	return w.wr.Write(p)
 }
 
+// Close completes the write opperation.
+//
+// If the byte size is less than writer's chunk size then a simply PutObject opperation is preformed.
+// Otherwise a multipart upload complete opperation is preformed.
+// The error returned is the error from this store opperation.
+//
+// If an error occured while uploading parts this error might also be a upload part error joined with
+// a AbortMultipartUpload error.
 func (w *ObjectWriter) Close() error {
 	w.wr.CloseWithError(io.EOF)
 
@@ -146,7 +182,7 @@ func (w *ObjectWriter) closeWithErr(ctx context.Context, err error, rd *io.PipeR
 
 	rd.CloseWithError(err)
 	if uploadID != nil {
-		err = w.abortUpload(ctx, uploadID)
+		err = errors.Join(err, w.abortUpload(ctx, uploadID))
 	}
 
 	w.closingErr <- err
@@ -263,7 +299,6 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
 
 	w.logger.DebugContext(ctx, "complete upload", slog.String("upload_id", *uploadID), slog.Int("parts", len(parts)))
 
-	// TODO: check if you need to sort
 	sort.Slice(parts, func(i, j int) bool {
 		return *parts[i].PartNumber < *parts[j].PartNumber
 	})
@@ -293,7 +328,7 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
  */
 
 // WithWriterLogger adds a logger for this writer
-func WithWriterLogger(logger *slog.Logger) WriterOption {
+func WithWriterLogger(logger *slog.Logger) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		w.logger = logger
 
@@ -302,7 +337,7 @@ func WithWriterLogger(logger *slog.Logger) WriterOption {
 }
 
 // WithWriterChunkSize sets the chunksize for this writer
-func WithWriterChunkSize(size uint) WriterOption {
+func WithWriterChunkSize(size uint) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		i := int(size)
 		if i < MinChunkSize {
@@ -316,7 +351,7 @@ func WithWriterChunkSize(size uint) WriterOption {
 }
 
 // WithWriterConcurrency sets the concurrency amount for this writer
-func WithWriterConcurrency(i uint8) WriterOption {
+func WithWriterConcurrency(i uint8) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		w.concurrency = int(i)
 
@@ -325,7 +360,7 @@ func WithWriterConcurrency(i uint8) WriterOption {
 }
 
 // WithWriterRetries sets the retry count for this writer
-func WithWriteRetries(i uint8) WriterOption {
+func WithWriteRetries(i uint8) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		w.retries = int(i)
 
@@ -334,7 +369,7 @@ func WithWriteRetries(i uint8) WriterOption {
 }
 
 // WithWriterACL sets the ACL for the object thats written
-func WithWriterACL(acl types.ObjectCannedACL) WriterOption {
+func WithWriterACL(acl types.ObjectCannedACL) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		w.alc = acl
 

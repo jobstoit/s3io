@@ -26,11 +26,33 @@ type ObjectReader struct {
 	concurrency int
 }
 
-type ReaderOption func(*ObjectReader) error
+// NewObjectReader returns a new ObjectReader to do io.Reader opperations on your s3 object
+func NewObjectReader(ctx context.Context, cli *s3.Client, bucketName, key string, opts ...ObjectReaderOption) (*ObjectReader, error) {
+	rd := &ObjectReader{
+		ctx:         ctx,
+		cli:         cli,
+		bucket:      bucketName,
+		key:         key,
+		chunkSize:   DefaultChunkSize,
+		retries:     defaultRetries,
+		concurrency: defaultConcurrency,
+		logger:      noopLogger,
+	}
 
-func ReaderOptions(ops ...ReaderOption) ReaderOption {
+	if err := ObjectReaderOptions(opts...)(rd); err != nil {
+		return nil, err
+	}
+
+	return rd, nil
+}
+
+// ObjectReaderOption is an option for the given read operation
+type ObjectReaderOption func(*ObjectReader) error
+
+// ObjectReaderOptions is a collection of ObjectReaderOption's
+func ObjectReaderOptions(opts ...ObjectReaderOption) ObjectReaderOption {
 	return func(r *ObjectReader) error {
-		for _, op := range ops {
+		for _, op := range opts {
 			if err := op(r); err != nil {
 				return err
 			}
@@ -40,7 +62,10 @@ func ReaderOptions(ops ...ReaderOption) ReaderOption {
 	}
 }
 
-// Read is the io.Reader implementation for the ObjectReader
+// Read is the io.Reader implementation for the ObjectReader.
+//
+// It returns an fs.ErrNotExists if the object doesn't exist in the given bucket.
+// And returns an io.EOF when all bytes are read.
 func (r *ObjectReader) Read(p []byte) (int, error) {
 	if r.rd == nil {
 		if err := r.preRead(); err != nil {
@@ -175,7 +200,7 @@ func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.Get
  */
 
 // WithReaderLogger sets the logger for this reader
-func WithReaderLogger(logger *slog.Logger) ReaderOption {
+func WithReaderLogger(logger *slog.Logger) ObjectReaderOption {
 	return func(r *ObjectReader) error {
 		if logger != nil {
 			r.logger = logger
@@ -186,7 +211,7 @@ func WithReaderLogger(logger *slog.Logger) ReaderOption {
 }
 
 // WithReaderChunkSize sets the chunksize for this reader
-func WithReaderChunkSize(size uint) ReaderOption {
+func WithReaderChunkSize(size uint) ObjectReaderOption {
 	return func(r *ObjectReader) error {
 		r.chunkSize = int(size)
 
@@ -195,7 +220,7 @@ func WithReaderChunkSize(size uint) ReaderOption {
 }
 
 // WithReaderConcurrency set the concurency amount for this reader
-func WithReaderConcurrency(i uint8) ReaderOption {
+func WithReaderConcurrency(i uint8) ObjectReaderOption {
 	return func(r *ObjectReader) error {
 		r.concurrency = int(i)
 
@@ -204,7 +229,7 @@ func WithReaderConcurrency(i uint8) ReaderOption {
 }
 
 // WithReaderRetries sets the retry count for this reader
-func WithReaderRetries(i uint8) ReaderOption {
+func WithReaderRetries(i uint8) ObjectReaderOption {
 	return func(r *ObjectReader) error {
 		r.retries = int(i)
 
