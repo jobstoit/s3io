@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"path"
@@ -230,6 +231,54 @@ func testFile(t *testing.T, bucket *Bucket, testName, filename string, src io.Re
 			t.Errorf("read and write are not equal. write: '%s', read: '%s'", writeSum, readSum)
 		}
 	})
+}
+
+func ExampleObjectReader_Read() {
+	ctx := context.Background()
+
+	bucket, err := OpenBucket(ctx, "bucket-name",
+		WithBucketCredentials("access-key", "access-secret"),
+		WithBucketCreateIfNotExists(),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rd, err := bucket.NewReader(ctx, "path/to/object.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := io.Copy(os.Stdout, rd); err != nil {
+		log.Fatal(err)
+	}
+	// Output:
+	// Object content
+}
+
+func ExampleObjectWriter_Write() {
+	ctx := context.Background()
+
+	bucket, err := OpenBucket(ctx, "bucket-name",
+		WithBucketCredentials("access-key", "access-secret"),
+		WithBucketCreateIfNotExists(),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	wr, err := bucket.NewWriter(ctx, "path/to/object.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := io.WriteString(wr, "hello world"); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := wr.Close(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func getTestBucket() (*Bucket, error) {
