@@ -30,11 +30,8 @@ type bucketBuilder struct {
 }
 
 func newBucketBuilder() *bucketBuilder {
-	const defaultRetries = 5
-	const defaultConcurrency = 5
-
 	return &bucketBuilder{
-		retries:        defaultRetries,
+		retries:        defaultConcurrency,
 		concurrency:    defaultConcurrency,
 		readChunkSize:  DefaultChunkSize,
 		writeChunkSize: DefaultChunkSize,
@@ -65,7 +62,7 @@ func (b *bucketBuilder) Build(ctx context.Context, name string) (*Bucket, error)
 			return nil, err
 		}
 
-		cli = s3.NewFromConfig(cfg, b.s3Opts...)
+		cli = s3.NewFromConfig(cfg, append(b.s3Opts, withS3Retries(b.retries))...)
 	}
 
 	exists, err := bucketExists(ctx, cli, name)
@@ -99,7 +96,6 @@ func (b *bucketBuilder) Build(ctx context.Context, name string) (*Bucket, error)
 	return &Bucket{
 		name:           name,
 		cli:            cli,
-		retries:        b.retries,
 		readChunkSize:  b.readChunkSize,
 		writeChunkSize: b.writeChunkSize,
 		concurrency:    b.concurrency,
@@ -137,9 +133,9 @@ func WithBucketCli(cli *s3.Client) BucketOption {
 
 // WithBucketCliLoaderOptions sets the config.LoaderOptions for the aws config.
 // Only works if the cli is not already provided.
-func WithBucketCliLoaderOptions(ops ...func(*config.LoadOptions) error) BucketOption {
+func WithBucketCliLoaderOptions(opts ...func(*config.LoadOptions) error) BucketOption {
 	return func(b *bucketBuilder) error {
-		b.cliOpts = append(b.cliOpts, ops...)
+		b.cliOpts = append(b.cliOpts, opts...)
 
 		return nil
 	}
@@ -147,9 +143,9 @@ func WithBucketCliLoaderOptions(ops ...func(*config.LoadOptions) error) BucketOp
 
 // WithBucketS3Options sets the s3 options for t.he s3 client.
 // Only works if the cli is not already provided.
-func WithBucketS3Options(ops ...func(*s3.Options)) BucketOption {
+func WithBucketS3Options(opts ...func(*s3.Options)) BucketOption {
 	return func(b *bucketBuilder) error {
-		b.s3Opts = append(b.s3Opts, ops...)
+		b.s3Opts = append(b.s3Opts, opts...)
 
 		return nil
 	}

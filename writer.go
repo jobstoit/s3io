@@ -21,10 +21,10 @@ type ObjectWriter struct {
 	key         string
 	wr          *io.PipeWriter
 	logger      *slog.Logger
-	retries     int
 	chunkSize   int
 	concurrency int
 	alc         types.ObjectCannedACL
+	s3Opts      []func(*s3.Options)
 
 	mux        sync.Mutex
 	wg         sync.WaitGroup
@@ -40,7 +40,6 @@ func NewObjectWriter(ctx context.Context, cli *s3.Client, bucketName, key string
 		bucket:      bucketName,
 		key:         key,
 		chunkSize:   DefaultChunkSize,
-		retries:     defaultRetries,
 		concurrency: defaultConcurrency,
 		logger:      noopLogger,
 
@@ -198,13 +197,7 @@ func (w *ObjectWriter) putObject(ctx context.Context, by []byte) error {
 		Body:   bytes.NewReader(by),
 	}
 
-	var err error
-	for range w.retries {
-		_, err = w.cli.PutObject(ctx, input)
-		if err == nil {
-			return err
-		}
-	}
+	_, err := w.cli.PutObject(ctx, input, w.s3Opts...)
 
 	return err
 }
@@ -218,16 +211,12 @@ func (w *ObjectWriter) createMultipartUpload(ctx context.Context) (*string, erro
 		ACL:    w.alc,
 	}
 
-	var res *s3.CreateMultipartUploadOutput
-	var err error
-	for range w.retries {
-		res, err = w.cli.CreateMultipartUpload(ctx, input)
-		if err == nil {
-			return res.UploadId, nil
-		}
+	res, err := w.cli.CreateMultipartUpload(ctx, input, w.s3Opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, err
+	return res.UploadId, nil
 }
 
 func (w *ObjectWriter) uploadPart(ctx context.Context, uploadID *string, partNr int32, by []byte) (types.CompletedPart, error) {
@@ -247,23 +236,19 @@ func (w *ObjectWriter) uploadPart(ctx context.Context, uploadID *string, partNr 
 		Body:       bytes.NewReader(by),
 	}
 
-	var res *s3.UploadPartOutput
-	var err error
-	for range w.retries {
-		res, err = w.cli.UploadPart(ctx, input)
-		if err == nil {
-			return types.CompletedPart{
-				ChecksumCRC32:  res.ChecksumCRC32,
-				ChecksumCRC32C: res.ChecksumCRC32C,
-				ChecksumSHA1:   res.ChecksumSHA1,
-				ChecksumSHA256: res.ChecksumSHA256,
-				ETag:           res.ETag,
-				PartNumber:     &partNr,
-			}, nil
-		}
+	res, err := w.cli.UploadPart(ctx, input, w.s3Opts...)
+	if err != nil {
+		return types.CompletedPart{}, err
 	}
 
-	return types.CompletedPart{}, err
+	return types.CompletedPart{
+		ChecksumCRC32:  res.ChecksumCRC32,
+		ChecksumCRC32C: res.ChecksumCRC32C,
+		ChecksumSHA1:   res.ChecksumSHA1,
+		ChecksumSHA256: res.ChecksumSHA256,
+		ETag:           res.ETag,
+		PartNumber:     &partNr,
+	}, nil
 }
 
 func (w *ObjectWriter) abortUpload(ctx context.Context, uploadID *string) error {
@@ -275,13 +260,7 @@ func (w *ObjectWriter) abortUpload(ctx context.Context, uploadID *string) error 
 		UploadId: uploadID,
 	}
 
-	var err error
-	for range w.retries {
-		_, err := w.cli.AbortMultipartUpload(ctx, input)
-		if err == nil {
-			break
-		}
-	}
+	_, err := w.cli.AbortMultipartUpload(ctx, input, w.s3Opts...)
 
 	return err
 }
@@ -312,13 +291,7 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
 		},
 	}
 
-	var err error
-	for range w.retries {
-		_, err = w.cli.CompleteMultipartUpload(ctx, input)
-		if err == nil {
-			break
-		}
-	}
+	_, err := w.cli.CompleteMultipartUpload(ctx, input, w.s3Opts...)
 
 	w.closingErr <- err
 }
@@ -362,7 +335,7 @@ func WithWriterConcurrency(i uint8) ObjectWriterOption {
 // WithWriterRetries sets the retry count for this writer
 func WithWriteRetries(i uint8) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
-		w.retries = int(i)
+		w.s3Opts = append(w.s3Opts, withS3Retries(int(i)))
 
 		return nil
 	}
@@ -372,6 +345,15 @@ func WithWriteRetries(i uint8) ObjectWriterOption {
 func WithWriterACL(acl types.ObjectCannedACL) ObjectWriterOption {
 	return func(w *ObjectWriter) error {
 		w.alc = acl
+
+		return nil
+	}
+}
+
+// WithWriterS3Options adds s3 options to the writer opperations
+func WithWriterS3Options(opts ...func(*s3.Options)) ObjectWriterOption {
+	return func(w *ObjectWriter) error {
+		w.s3Opts = append(w.s3Opts, opts...)
 
 		return nil
 	}

@@ -15,7 +15,6 @@ import (
 // Bucket is an abstraction to interact with objects in your S3 bucket
 type Bucket struct {
 	name           string
-	retries        int
 	readChunkSize  int
 	writeChunkSize int
 	concurrency    int
@@ -50,25 +49,19 @@ func (b *Bucket) Exists(ctx context.Context, key string) (bool, error) {
 		Key:    &key,
 	}
 
-	var err error
-	for range b.retries {
-		_, err = b.cli.HeadObject(ctx, input)
-		if err == nil {
-			return true, nil
-		}
-
+	if _, err := b.cli.HeadObject(ctx, input); err != nil {
 		var apiError smithy.APIError
 		if errors.As(err, &apiError) {
 			switch apiError.(type) {
 			case *types.NotFound:
 				return false, nil
 			default:
-				continue
+				return false, err
 			}
 		}
 	}
 
-	return false, err
+	return true, nil
 }
 
 // Delete deletes the given object keys
@@ -127,7 +120,6 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReader
 		bucket:      b.name,
 		key:         key,
 		chunkSize:   b.readChunkSize,
-		retries:     b.retries,
 		concurrency: b.concurrency,
 		logger:      b.logger,
 	}
@@ -147,7 +139,6 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriter
 		bucket:      b.name,
 		key:         key,
 		chunkSize:   b.writeChunkSize,
-		retries:     b.retries,
 		concurrency: b.concurrency,
 		logger:      b.logger,
 
