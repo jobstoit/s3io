@@ -33,6 +33,7 @@ func OpenBucket(ctx context.Context, name string, opts ...BucketOption) (*Bucket
 	return builder.Build(ctx, name)
 }
 
+// OpenBucketkwithCli returns a bucket to interact with.
 func OpenBucketkwithCli(ctx context.Context, cli *s3.Client, name string, opts ...BucketOption) (*Bucket, error) {
 	builder := newBucketBuilder()
 	if err := BucketOptions(append(opts, WithBucketCli(cli))...)(builder); err != nil {
@@ -119,7 +120,7 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error
 }
 
 // NewReader returns a new ObjectReader to do io.Reader opperations with your s3 object
-func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ReaderOption) (io.Reader, error) {
+func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) (io.Reader, error) {
 	rd := &ObjectReader{
 		ctx:         ctx,
 		cli:         b.cli,
@@ -131,7 +132,7 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ReaderOption
 		logger:      b.logger,
 	}
 
-	if err := ReaderOptions(opts...)(rd); err != nil {
+	if err := ObjectReaderOptions(opts...)(rd); err != nil {
 		return nil, err
 	}
 
@@ -139,7 +140,7 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ReaderOption
 }
 
 // NewWriter returns a new ObjectWriter to do io.Write opparations with your s3 object
-func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...WriterOption) (io.WriteCloser, error) {
+func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriterOption) (io.WriteCloser, error) {
 	wr := &ObjectWriter{
 		ctx:         ctx,
 		cli:         b.cli,
@@ -153,7 +154,7 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...WriterOption
 		closingErr: make(chan error, 1),
 	}
 
-	if err := WriterOptions(opts...)(wr); err != nil {
+	if err := ObjectWriterOptions(opts...)(wr); err != nil {
 		return nil, err
 	}
 
@@ -161,7 +162,7 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...WriterOption
 }
 
 // NewWriterIfNotExists returns a writer if the object doesn't already exist
-func (b *Bucket) NewWriterIfNotExists(ctx context.Context, key string, opts ...WriterOption) (io.WriteCloser, error) {
+func (b *Bucket) NewWriterIfNotExists(ctx context.Context, key string, opts ...ObjectWriterOption) (io.WriteCloser, error) {
 	exists, err := b.Exists(ctx, key)
 	if err != nil {
 		return nil, err

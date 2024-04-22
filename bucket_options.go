@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,8 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 )
-
-var noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type bucketBuilder struct {
 	createIfNotExist bool
