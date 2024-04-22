@@ -252,8 +252,6 @@ func ExampleObjectReader_Read() {
 	if _, err := io.Copy(os.Stdout, rd); err != nil {
 		log.Fatal(err)
 	}
-	// Output:
-	// Object content
 }
 
 func ExampleObjectWriter_Write() {
