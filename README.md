@@ -2,29 +2,33 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jobstoit/s3io.svg)](https://pkg.go.dev/github.com/jobstoit/s3io)
 
-An abstraction layer on top of the s3 sdk to do io read/write opperations on s3 objects
+An abstraction layer on top of the s3 sdk to do io read/write opperations on s3 objects.
+The s3io reader and writer stream the objects from and to your s3 instance while being memory efficient.
 
 ```go
 // Note the "WithBucket..." are options
-bucket, err := s3io.OpenBucket(ctx, "my-bucket-name", WithBucketCredentials(accessKey, secretKey))
+bucket, err := s3io.OpenBucket(ctx, "my-bucket-name", s3io.WithBucketCredentials(accessKey, secretKey))
 if err != nil {
-  ...
+  return err
 }
 
 // Note the "WithBucket..." are options specifically for this writer session
-writer, err := bucket.NewWriter(ctx, "path/to/object.txt", WithWriterRetries(3))
+writer, err := bucket.NewWriter(ctx, "path/to/object.txt", s3io.WithWriterRetries(3))
 if err != nil {
-  ...
+  return err
 }
 
-_, err := io.Copy(writer, file)
-if err != nil {
-  ....
+if _, err := io.WriteString(writer, "Hello world!"); err != nil {
+  return err
+}
+
+if err := writer.Close(); err != nil {
+  return err 
 }
 
 reader, err := bucket.NewReader(ctx, "path/to/object.txt")
 if err != nil {
-
+  return err
 }
 
 _, err := io.Copy(os.Stdout, reader)
