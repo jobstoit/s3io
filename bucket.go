@@ -118,6 +118,7 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReader
 		ctx:         ctx,
 		s3:          b.cli,
 		input:       input,
+		retries:     defaultRetries,
 		chunkSize:   b.readChunkSize,
 		concurrency: b.concurrency,
 		logger:      b.logger,
