@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -15,8 +14,8 @@ import (
 // Bucket is an abstraction to interact with objects in your S3 bucket
 type Bucket struct {
 	name           string
-	readChunkSize  int
-	writeChunkSize int
+	readChunkSize  int64
+	writeChunkSize int64
 	concurrency    int
 	logger         *slog.Logger
 	cli            *s3.Client
@@ -113,31 +112,37 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error
 }
 
 // NewReader returns a new ObjectReader to do io.Reader opperations with your s3 object
-func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) (io.Reader, error) {
+func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) io.Reader {
+	input := &s3.GetObjectInput{
+		Bucket: &b.name,
+		Key:    &key,
+	}
+
 	rd := &ObjectReader{
 		ctx:         ctx,
-		cli:         b.cli,
-		bucket:      b.name,
-		key:         key,
+		s3:          b.cli,
+		input:       input,
 		chunkSize:   b.readChunkSize,
 		concurrency: b.concurrency,
 		logger:      b.logger,
 	}
 
-	if err := ObjectReaderOptions(opts...)(rd); err != nil {
-		return nil, err
-	}
+	ObjectReaderOptions(opts...)(rd)
 
-	return rd, nil
+	return rd
 }
 
 // NewWriter returns a new ObjectWriter to do io.Write opparations with your s3 object
-func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriterOption) (io.WriteCloser, error) {
+func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriterOption) io.WriteCloser {
+	input := &s3.PutObjectInput{
+		Bucket: &b.name,
+		Key:    &key,
+	}
+
 	wr := &ObjectWriter{
 		ctx:         ctx,
-		cli:         b.cli,
-		bucket:      b.name,
-		key:         key,
+		s3:          b.cli,
+		input:       input,
 		chunkSize:   b.writeChunkSize,
 		concurrency: b.concurrency,
 		logger:      b.logger,
@@ -145,28 +150,17 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriter
 		closingErr: make(chan error, 1),
 	}
 
-	if err := ObjectWriterOptions(opts...)(wr); err != nil {
-		return nil, err
-	}
+	ObjectWriterOptions(opts...)(wr)
 
-	return wr, nil
-}
-
-// NewWriterIfNotExists returns a writer if the object doesn't already exist
-func (b *Bucket) NewWriterIfNotExists(ctx context.Context, key string, opts ...ObjectWriterOption) (io.WriteCloser, error) {
-	exists, err := b.Exists(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-
-	if !exists {
-		return nil, fs.ErrExist
-	}
-
-	return b.NewWriter(ctx, key, opts...)
+	return wr
 }
 
 // Client returns the s3 client the Bucket uses
 func (b *Bucket) Client() *s3.Client {
 	return b.cli
+}
+
+// Name returns the specified bucket's name
+func (b *Bucket) Name() string {
+	return b.name
 }

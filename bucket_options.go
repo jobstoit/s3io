@@ -19,8 +19,8 @@ type bucketBuilder struct {
 	cli              *s3.Client
 	retries          int
 	concurrency      int
-	readChunkSize    int
-	writeChunkSize   int
+	readChunkSize    int64
+	writeChunkSize   int64
 	logger           *slog.Logger
 
 	// client options
@@ -192,18 +192,18 @@ func WithBucketCreateIfNotExists() BucketOption {
 }
 
 // WithBucketReadChunkSize sets the default read chunksize
-func WithBucketReadChunkSize(size uint) BucketOption {
+func WithBucketReadChunkSize(size int64) BucketOption {
 	return func(b *bucketBuilder) error {
-		b.readChunkSize = int(size)
+		b.readChunkSize = size
 
 		return nil
 	}
 }
 
 // WithBucketWriteChunkSize sets the default write chunksize
-func WithBucketWriteChunkSize(size uint) BucketOption {
+func WithBucketWriteChunkSize(size int64) BucketOption {
 	return func(b *bucketBuilder) error {
-		s := int(size)
+		s := size
 		if s < DefaultChunkSize {
 			return ErrMinChunkSize
 		}
@@ -215,18 +215,26 @@ func WithBucketWriteChunkSize(size uint) BucketOption {
 }
 
 // WithBucketConcurrency sets the default read/write concurrency
-func WithBucketConcurrency(size uint8) BucketOption {
+func WithBucketConcurrency(size int) BucketOption {
 	return func(b *bucketBuilder) error {
-		b.concurrency = int(size)
+		if size < 1 {
+			size = 1
+		}
+
+		b.concurrency = size
 
 		return nil
 	}
 }
 
 // WithBucketRetries sets the default amount of retries for any given opperation
-func WithBucketRetries(i uint8) BucketOption {
+func WithBucketRetries(i int) BucketOption {
 	return func(b *bucketBuilder) error {
-		b.retries = int(i)
+		if i < 1 {
+			i = 1
+		}
+
+		b.retries = i
 
 		return nil
 	}
@@ -236,9 +244,11 @@ func WithBucketRetries(i uint8) BucketOption {
 // Setting the logger provides debug logs.
 func WithBucketLogger(logger *slog.Logger) BucketOption {
 	return func(b *bucketBuilder) error {
-		if logger != nil {
-			b.logger = logger
+		if logger == nil {
+			logger = noopLogger
 		}
+
+		b.logger = logger
 
 		return nil
 	}
