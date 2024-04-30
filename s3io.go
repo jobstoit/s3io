@@ -2,7 +2,6 @@ package s3io
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 
@@ -18,11 +17,7 @@ const (
 	defaultConcurrency = 5
 )
 
-var (
-	ErrMinChunkSize = errors.New("given value is less than minimum chunksize of 5mb")
-
-	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
-)
+var noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // DownloadAPIClient is an S3 API client that can invoke the GetObject operation.
 type DownloadAPIClient interface {

@@ -24,19 +24,15 @@ type Bucket struct {
 // OpenBucket returns a bucket to interact with.
 func OpenBucket(ctx context.Context, name string, opts ...BucketOption) (*Bucket, error) {
 	builder := newBucketBuilder()
-	if err := BucketOptions(opts...)(builder); err != nil {
-		return nil, err
-	}
+	BucketOptions(opts...)(builder)
 
 	return builder.Build(ctx, name)
 }
 
-// OpenBucketkwithCli returns a bucket to interact with.
-func OpenBucketkwithCli(ctx context.Context, cli *s3.Client, name string, opts ...BucketOption) (*Bucket, error) {
+// OpenBucketkwithClient returns a bucket to interact with.
+func OpenBucketkwithClient(ctx context.Context, cli *s3.Client, name string, opts ...BucketOption) (*Bucket, error) {
 	builder := newBucketBuilder()
-	if err := BucketOptions(append(opts, WithBucketCli(cli))...)(builder); err != nil {
-		return nil, err
-	}
+	BucketOptions(append(opts, WithBucketCli(cli))...)(builder)
 
 	return builder.Build(ctx, name)
 }
