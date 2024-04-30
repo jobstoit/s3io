@@ -15,16 +15,14 @@ import (
 
 // ObjectWriter is an io.WriteCloser implementation for an s3 Object
 type ObjectWriter struct {
-	ctx         context.Context
-	cli         *s3.Client
-	bucket      string
-	key         string
-	wr          *io.PipeWriter
-	logger      *slog.Logger
-	chunkSize   int
-	concurrency int
-	alc         types.ObjectCannedACL
-	s3Opts      []func(*s3.Options)
+	ctx           context.Context
+	s3            UploadAPIClient
+	wr            *io.PipeWriter
+	logger        *slog.Logger
+	chunkSize     int64
+	concurrency   int
+	clientOptions []func(*s3.Options)
+	input         *s3.PutObjectInput
 
 	mux        sync.Mutex
 	wg         sync.WaitGroup
@@ -33,12 +31,11 @@ type ObjectWriter struct {
 }
 
 // NewObjectWriter returns a new ObjectWriter to do io.Writer opperations on your s3 object
-func NewObjectWriter(ctx context.Context, cli *s3.Client, bucketName, key string, opts ...ObjectWriterOption) (*ObjectWriter, error) {
+func NewObjectWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...ObjectWriterOption) io.WriteCloser {
 	wr := &ObjectWriter{
 		ctx:         ctx,
-		cli:         cli,
-		bucket:      bucketName,
-		key:         key,
+		s3:          s3,
+		input:       input,
 		chunkSize:   DefaultChunkSize,
 		concurrency: defaultConcurrency,
 		logger:      noopLogger,
@@ -46,26 +43,20 @@ func NewObjectWriter(ctx context.Context, cli *s3.Client, bucketName, key string
 		closingErr: make(chan error, 1),
 	}
 
-	if err := ObjectWriterOptions(opts...)(wr); err != nil {
-		return nil, err
-	}
+	ObjectWriterOptions(opts...)(wr)
 
-	return wr, nil
+	return wr
 }
 
 // ObjectWriterOption is an option for the given write operation
-type ObjectWriterOption func(*ObjectWriter) error
+type ObjectWriterOption func(*ObjectWriter)
 
 // ObjectWriterOptions is a collection of ObjectWriterOption's
 func ObjectWriterOptions(opts ...ObjectWriterOption) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
+	return func(w *ObjectWriter) {
 		for _, op := range opts {
-			if err := op(w); err != nil {
-				return err
-			}
+			op(w)
 		}
-
-		return nil
 	}
 }
 
@@ -130,7 +121,7 @@ func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *co
 			return
 		}
 
-		size := len(by)
+		size := int64(len(by))
 		if partNr == 1 {
 			if size < w.chunkSize { // For small uploads
 				err = w.putObject(ctx, by)
@@ -146,7 +137,7 @@ func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *co
 
 		}
 
-		if len(by) < w.chunkSize { // EOF
+		if size < w.chunkSize { // EOF
 			go w.completeUpload(ctx, uploadID)
 		} else {
 			w.wg.Add(1)
@@ -190,14 +181,10 @@ func (w *ObjectWriter) closeWithErr(ctx context.Context, err error, rd *io.PipeR
 func (w *ObjectWriter) putObject(ctx context.Context, by []byte) error {
 	w.logger.DebugContext(ctx, "upload small file", slog.Int("size", len(by)))
 
-	input := &s3.PutObjectInput{
-		Bucket: &w.bucket,
-		Key:    &w.key,
-		ACL:    w.alc,
-		Body:   bytes.NewReader(by),
-	}
+	input := w.input
+	input.Body = bytes.NewReader(by)
 
-	_, err := w.cli.PutObject(ctx, input, w.s3Opts...)
+	_, err := w.s3.PutObject(ctx, input, w.clientOptions...)
 
 	return err
 }
@@ -206,12 +193,39 @@ func (w *ObjectWriter) createMultipartUpload(ctx context.Context) (*string, erro
 	w.logger.DebugContext(ctx, "starting multipart upload")
 
 	input := &s3.CreateMultipartUploadInput{
-		Bucket: &w.bucket,
-		Key:    &w.key,
-		ACL:    w.alc,
+		Bucket:                    w.input.Bucket,
+		Key:                       w.input.Key,
+		ACL:                       w.input.ACL,
+		BucketKeyEnabled:          w.input.BucketKeyEnabled,
+		CacheControl:              w.input.CacheControl,
+		ChecksumAlgorithm:         w.input.ChecksumAlgorithm,
+		ContentDisposition:        w.input.ContentDisposition,
+		ContentEncoding:           w.input.ContentEncoding,
+		ContentLanguage:           w.input.ContentLanguage,
+		ContentType:               w.input.ContentType,
+		ExpectedBucketOwner:       w.input.ExpectedBucketOwner,
+		Expires:                   w.input.Expires,
+		GrantFullControl:          w.input.GrantFullControl,
+		GrantRead:                 w.input.GrantRead,
+		GrantReadACP:              w.input.GrantReadACP,
+		GrantWriteACP:             w.input.GrantWriteACP,
+		Metadata:                  w.input.Metadata,
+		ObjectLockLegalHoldStatus: w.input.ObjectLockLegalHoldStatus,
+		ObjectLockMode:            w.input.ObjectLockMode,
+		ObjectLockRetainUntilDate: w.input.ObjectLockRetainUntilDate,
+		RequestPayer:              w.input.RequestPayer,
+		SSECustomerAlgorithm:      w.input.SSECustomerAlgorithm,
+		SSECustomerKey:            w.input.SSECustomerKey,
+		SSECustomerKeyMD5:         w.input.SSECustomerKeyMD5,
+		SSEKMSEncryptionContext:   w.input.SSEKMSEncryptionContext,
+		SSEKMSKeyId:               w.input.SSEKMSKeyId,
+		ServerSideEncryption:      w.input.ServerSideEncryption,
+		StorageClass:              w.input.StorageClass,
+		Tagging:                   w.input.Tagging,
+		WebsiteRedirectLocation:   w.input.WebsiteRedirectLocation,
 	}
 
-	res, err := w.cli.CreateMultipartUpload(ctx, input, w.s3Opts...)
+	res, err := w.s3.CreateMultipartUpload(ctx, input, w.clientOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,14 +243,14 @@ func (w *ObjectWriter) uploadPart(ctx context.Context, uploadID *string, partNr 
 	)
 
 	input := &s3.UploadPartInput{
-		Bucket:     &w.bucket,
-		Key:        &w.key,
+		Bucket:     w.input.Bucket,
+		Key:        w.input.Key,
 		UploadId:   uploadID,
 		PartNumber: &partNr,
 		Body:       bytes.NewReader(by),
 	}
 
-	res, err := w.cli.UploadPart(ctx, input, w.s3Opts...)
+	res, err := w.s3.UploadPart(ctx, input, w.clientOptions...)
 	if err != nil {
 		return types.CompletedPart{}, err
 	}
@@ -255,12 +269,14 @@ func (w *ObjectWriter) abortUpload(ctx context.Context, uploadID *string) error 
 	w.logger.DebugContext(ctx, "abort upload", slog.String("upload_id", *uploadID))
 
 	input := &s3.AbortMultipartUploadInput{
-		Bucket:   &w.bucket,
-		Key:      &w.key,
-		UploadId: uploadID,
+		Bucket:              w.input.Bucket,
+		Key:                 w.input.Key,
+		UploadId:            uploadID,
+		ExpectedBucketOwner: w.input.ExpectedBucketOwner,
+		RequestPayer:        w.input.RequestPayer,
 	}
 
-	_, err := w.cli.AbortMultipartUpload(ctx, input, w.s3Opts...)
+	_, err := w.s3.AbortMultipartUpload(ctx, input, w.clientOptions...)
 
 	return err
 }
@@ -283,15 +299,20 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
 	})
 
 	input := &s3.CompleteMultipartUploadInput{
-		Bucket:   &w.bucket,
-		Key:      &w.key,
+		Bucket:   w.input.Bucket,
+		Key:      w.input.Key,
 		UploadId: uploadID,
 		MultipartUpload: &types.CompletedMultipartUpload{
 			Parts: parts,
 		},
+		ExpectedBucketOwner:  w.input.ExpectedBucketOwner,
+		RequestPayer:         w.input.RequestPayer,
+		SSECustomerAlgorithm: w.input.SSECustomerAlgorithm,
+		SSECustomerKey:       w.input.SSECustomerKey,
+		SSECustomerKeyMD5:    w.input.SSECustomerKeyMD5,
 	}
 
-	_, err := w.cli.CompleteMultipartUpload(ctx, input, w.s3Opts...)
+	_, err := w.s3.CompleteMultipartUpload(ctx, input, w.clientOptions...)
 
 	w.closingErr <- err
 }
@@ -300,61 +321,50 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
  * Options
  */
 
-// WithWriterLogger adds a logger for this writer
+// WithWriterLogger adds a logger for this writer.
 func WithWriterLogger(logger *slog.Logger) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		w.logger = logger
-
-		return nil
-	}
-}
-
-// WithWriterChunkSize sets the chunksize for this writer
-func WithWriterChunkSize(size uint) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		i := int(size)
-		if i < MinChunkSize {
-			return ErrMinChunkSize
+	return func(w *ObjectWriter) {
+		if logger == nil {
+			logger = noopLogger
 		}
 
-		w.chunkSize = i
-
-		return nil
+		w.logger = logger
 	}
 }
 
-// WithWriterConcurrency sets the concurrency amount for this writer
-func WithWriterConcurrency(i uint8) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		w.concurrency = int(i)
+// WithWriterChunkSize sets the chunksize for this writer.
+// If set below the minimal chunk size of 5Mb then it will be set to the minimal chunksize.
+func WithWriterChunkSize(size int64) ObjectWriterOption {
+	return func(w *ObjectWriter) {
+		if size < MinChunkSize {
+			size = MinChunkSize
+		}
 
-		return nil
+		w.chunkSize = size
+	}
+}
+
+// WithWriterConcurrency sets the concurrency amount for this writer.
+func WithWriterConcurrency(i int) ObjectWriterOption {
+	return func(w *ObjectWriter) {
+		if i < 1 {
+			i = 1
+		}
+
+		w.concurrency = i
 	}
 }
 
 // WithWriterRetries sets the retry count for this writer
-func WithWriteRetries(i uint8) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		w.s3Opts = append(w.s3Opts, withS3Retries(int(i)))
-
-		return nil
+func WithWriteRetries(i int) ObjectWriterOption {
+	return func(w *ObjectWriter) {
+		w.clientOptions = append(w.clientOptions, withS3Retries(i))
 	}
 }
 
-// WithWriterACL sets the ACL for the object thats written
-func WithWriterACL(acl types.ObjectCannedACL) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		w.alc = acl
-
-		return nil
-	}
-}
-
-// WithWriterS3Options adds s3 options to the writer opperations
-func WithWriterS3Options(opts ...func(*s3.Options)) ObjectWriterOption {
-	return func(w *ObjectWriter) error {
-		w.s3Opts = append(w.s3Opts, opts...)
-
-		return nil
+// WithWriterClientOptions adds s3 client options to the writer opperations
+func WithWriterClientOptions(opts ...func(*s3.Options)) ObjectWriterOption {
+	return func(w *ObjectWriter) {
+		w.clientOptions = append(w.clientOptions, opts...)
 	}
 }

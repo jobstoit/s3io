@@ -1,7 +1,7 @@
 package s3io
 
 import (
-	"context"
+	"errors"
 	"io"
 	"log/slog"
 
@@ -10,29 +10,18 @@ import (
 )
 
 const (
-	MinChunkSize     int64 = 1024 * 1024 * 5
-	DefaultChunkSize int64 = MinChunkSize
+	MinChunkSize     = 1024 * 1024 * 5
+	DefaultChunkSize = MinChunkSize
 
 	defaultRetries     = 5
 	defaultConcurrency = 5
 )
 
-var noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+var (
+	ErrMinChunkSize = errors.New("given value is less than minimum chunksize of 5mb")
 
-// DownloadAPIClient is an S3 API client that can invoke the GetObject operation.
-type DownloadAPIClient interface {
-	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
-}
-
-// UploadAPIClient is an S3 API client that can invoke PutObject, UploadPart, CreateMultipartUpload,
-// CompleteMultipartUpload, and AbortMultipartUpload operations.
-type UploadAPIClient interface {
-	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
-	UploadPart(context.Context, *s3.UploadPartInput, ...func(*s3.Options)) (*s3.UploadPartOutput, error)
-	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput, ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error)
-	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput, ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error)
-	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
-}
+	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+)
 
 type concurrencyLock struct {
 	l chan struct{}
