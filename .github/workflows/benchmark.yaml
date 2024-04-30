@@ -1,7 +1,13 @@
 name: Go Benchmark
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      count:
+        type: number
+        default: 1
+        required: true
+        description: the count of benchmark each step should do
 
 jobs:
   test:
@@ -30,4 +36,4 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Test
-        run: go test --bench=. --run="Benchmark" -v ./...
+        run: go test --bench=. --count=${{ inputs.count }} --run="Benchmark" -v ./...
