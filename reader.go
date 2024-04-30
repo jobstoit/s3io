@@ -24,6 +24,7 @@ type ObjectReader struct {
 	logger        *slog.Logger
 	chunkSize     int64
 	concurrency   int
+	retries       int
 	clientOptions []func(*s3.Options)
 	input         *s3.GetObjectInput
 }
@@ -197,7 +198,16 @@ func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.Get
 	input := *r.input
 	input.Range = &byteRange
 
-	return r.s3.GetObject(ctx, &input, r.clientOptions...)
+	var res *s3.GetObjectOutput
+	var err error
+	for range r.retries {
+		res, err = r.s3.GetObject(ctx, &input, r.clientOptions...)
+		if err == nil {
+			return res, err
+		}
+	}
+
+	return res, err
 }
 
 /*
@@ -232,9 +242,13 @@ func WithReaderConcurrency(i int) ObjectReaderOption {
 }
 
 // WithReaderRetries sets the retry count for this reader
-func WithReaderRetries(i uint8) ObjectReaderOption {
+func WithReaderRetries(i int) ObjectReaderOption {
 	return func(r *ObjectReader) {
-		r.clientOptions = append(r.clientOptions, withS3Retries(int(i)))
+		if i < 1 {
+			i = 1
+		}
+
+		r.retries = i
 	}
 }
 
