@@ -34,4 +34,6 @@ jobs:
           cache-dependency-path: v2/go.sum
 
       - name: Test
-        run: go test --modfile=v2/go.mod -v ./...
+        run: |
+          cd v2
+          go test -v ./...

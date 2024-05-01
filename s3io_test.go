@@ -286,16 +286,21 @@ func getTestBucket() (*Bucket, error) {
 	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
 	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 
+	logger := noopLogger
+	if withDebug := os.Getenv("DEBUG_LOG"); withDebug != "" {
+		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     slog.LevelDebug,
+		}))
+	}
+
 	bucket, err := OpenBucket(context.Background(),
 		bucketName,
 		WithBucketHost(endpoint, region, true),
 		WithBucketCredentials(accessKey, secretKey),
 		WithBucketRetries(3),
 		WithBucketCreateIfNotExists(),
-		WithBucketLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: true,
-			Level:     slog.LevelDebug,
-		}))),
+		WithBucketLogger(logger),
 	)
 
 	return bucket, err

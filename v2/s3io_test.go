@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jobstoit/s3io"
+	"github.com/jobstoit/s3io/v2"
 )
 
 var (
@@ -36,7 +36,7 @@ func TestReadWrite(t *testing.T) {
 	testFile(t, bucket, "smallish size file", "data/test-smallish.txt", io.LimitReader(rand.Reader, 1024*1024*18+291))
 	testFile(t, bucket, "small size file", "data/test-small.txt", io.LimitReader(rand.Reader, 1024*512+342))
 	testFile(t, bucket, "medium size file", "data/test-medium.txt", io.LimitReader(rand.Reader, 1024*1024*358+572))
-	// testFile(t, bucket, "large size file", "data/test-large.txt", io.LimitReader(rand.Reader, 1024*1024*1024*2+812))
+	testFile(t, bucket, "large size file", "data/test-large.txt", io.LimitReader(rand.Reader, 1024*1024*1024*2+812))
 }
 
 func BenchmarkAgainstManager(b *testing.B) {
@@ -212,16 +212,21 @@ func getTestBucket() (*s3io.Bucket, error) {
 	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
 	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 
+	logger := noopLogger
+	if withDebug := os.Getenv("DEBUG_LOG"); withDebug != "" {
+		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     slog.LevelDebug,
+		}))
+	}
+
 	bucket, err := s3io.OpenBucket(context.Background(),
 		bucketName,
 		s3io.WithBucketHost(endpoint, region, true),
 		s3io.WithBucketCredentials(accessKey, secretKey),
 		s3io.WithBucketRetries(3),
 		s3io.WithBucketCreateIfNotExists(),
-		s3io.WithBucketLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: true,
-			Level:     slog.LevelDebug,
-		}))),
+		s3io.WithBucketLogger(logger),
 	)
 
 	return bucket, err
