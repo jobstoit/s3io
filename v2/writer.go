@@ -123,6 +123,11 @@ func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *co
 
 		size := int64(len(by))
 		if partNr == 1 {
+			if size == 0 {
+				w.closeWithErr(ctx, io.EOF, rd, cl, uploadID)
+				return
+			}
+
 			if size < w.chunkSize { // For small uploads
 				err = w.putObject(ctx, by)
 				w.closeWithErr(ctx, err, rd, cl, uploadID)
