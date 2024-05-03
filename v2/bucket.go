@@ -61,18 +61,26 @@ func (b *Bucket) Exists(ctx context.Context, key string) (bool, error) {
 
 // Delete deletes the given object keys
 func (b *Bucket) Delete(ctx context.Context, keys ...string) error {
+	var err error
+
 	length := len(keys)
 	if length == 0 {
 		return nil
 	}
 
 	if length == 1 {
-		_, err := b.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
+		_, err = b.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &b.name,
 			Key:    &keys[0],
 		})
 
 		return err
+	}
+
+	if length > deleteLimit {
+		err = errors.Join(err, b.Delete(ctx, keys[deleteLimit:]...))
+
+		length = deleteLimit
 	}
 
 	objs := make([]types.ObjectIdentifier, length)
@@ -82,14 +90,14 @@ func (b *Bucket) Delete(ctx context.Context, keys ...string) error {
 		}
 	}
 
-	_, err := b.cli.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	_, derr := b.cli.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: &b.name,
 		Delete: &types.Delete{
 			Objects: objs,
 		},
 	})
 
-	return err
+	return errors.Join(err, derr)
 }
 
 // List returns a list of objects details.
