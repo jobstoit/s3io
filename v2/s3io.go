@@ -12,6 +12,7 @@ import (
 const (
 	MinChunkSize     int64 = 1024 * 1024 * 5
 	DefaultChunkSize int64 = MinChunkSize
+	deleteLimit            = 1000
 
 	defaultRetries     = 5
 	defaultConcurrency = 5
