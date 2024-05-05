@@ -1,6 +1,7 @@
 # S3IO
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jobstoit/s3io/v2.svg)](https://pkg.go.dev/github.com/jobstoit/s3io/v2)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jobstoit/s3io/v2)](https://goreportcard.com/report/github.com/jobstoit/s3io/v2)
 
 An abstraction layer on top of the s3 sdk to do io read/write opperations on s3 objects.
 The s3io reader and writer stream the objects from and to your s3 instance while being memory efficient.
