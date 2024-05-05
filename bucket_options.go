@@ -19,8 +19,8 @@ type bucketBuilder struct {
 	cli              *s3.Client
 	retries          int
 	concurrency      int
-	readChunkSize    int
-	writeChunkSize   int
+	readChunkSize    int64
+	writeChunkSize   int64
 	logger           *slog.Logger
 
 	// client options
@@ -39,18 +39,14 @@ func newBucketBuilder() *bucketBuilder {
 	}
 }
 
-type BucketOption func(*bucketBuilder) error
+type BucketOption func(*bucketBuilder)
 
 // BucketOptions bundles bucket options
 func BucketOptions(opts ...BucketOption) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		for _, op := range opts {
-			if err := op(b); err != nil {
-				return err
-			}
+			op(b)
 		}
-
-		return nil
 	}
 }
 
@@ -124,37 +120,31 @@ func bucketExists(ctx context.Context, cli *s3.Client, name string) (bool, error
 
 // WithCli directly sets the s3 client for the bucket.
 func WithBucketCli(cli *s3.Client) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.cli = cli
-
-		return nil
 	}
 }
 
 // WithBucketCliLoaderOptions sets the config.LoaderOptions for the aws config.
 // Only works if the cli is not already provided.
 func WithBucketCliLoaderOptions(opts ...func(*config.LoadOptions) error) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.cliOpts = append(b.cliOpts, opts...)
-
-		return nil
 	}
 }
 
 // WithBucketS3Options sets the s3 options for t.he s3 client.
 // Only works if the cli is not already provided.
 func WithBucketS3Options(opts ...func(*s3.Options)) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.s3Opts = append(b.s3Opts, opts...)
-
-		return nil
 	}
 }
 
 // WithBucketHost sets the endpoint, region and if it uses a pathstyle for the cli.
 // Only works if the cli is not already provided.
 func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.cliOpts = append(b.cliOpts,
 			config.WithRegion(region),
 			config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, opt ...interface{}) (aws.Endpoint, error) {
@@ -165,81 +155,75 @@ func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
 		b.s3Opts = append(b.s3Opts, func(o *s3.Options) {
 			o.UsePathStyle = true
 		})
-
-		return nil
 	}
 }
 
 // WithBucketCredentials sets the access key and secret key for the cli.
 // Only works if the cli is not already provided.
 func WithBucketCredentials(accessKey, secretKey string) BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.cliOpts = append(b.cliOpts,
 			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		)
-
-		return nil
 	}
 }
 
 // WithBucketCreateIfNotExitsts will create the bucket if it doesn't already exist.
 func WithBucketCreateIfNotExists() BucketOption {
-	return func(b *bucketBuilder) error {
+	return func(b *bucketBuilder) {
 		b.createIfNotExist = true
-
-		return nil
 	}
 }
 
 // WithBucketReadChunkSize sets the default read chunksize
-func WithBucketReadChunkSize(size uint) BucketOption {
-	return func(b *bucketBuilder) error {
-		b.readChunkSize = int(size)
-
-		return nil
+func WithBucketReadChunkSize(size int64) BucketOption {
+	return func(b *bucketBuilder) {
+		b.readChunkSize = size
 	}
 }
 
 // WithBucketWriteChunkSize sets the default write chunksize
-func WithBucketWriteChunkSize(size uint) BucketOption {
-	return func(b *bucketBuilder) error {
-		s := int(size)
-		if s < DefaultChunkSize {
-			return ErrMinChunkSize
+func WithBucketWriteChunkSize(size int64) BucketOption {
+	return func(b *bucketBuilder) {
+		s := size
+		if s < MinChunkSize {
+			s = MinChunkSize
 		}
 
 		b.readChunkSize = s
-
-		return nil
 	}
 }
 
 // WithBucketConcurrency sets the default read/write concurrency
-func WithBucketConcurrency(size uint8) BucketOption {
-	return func(b *bucketBuilder) error {
-		b.concurrency = int(size)
+func WithBucketConcurrency(size int) BucketOption {
+	return func(b *bucketBuilder) {
+		if size < 1 {
+			size = 1
+		}
 
-		return nil
+		b.concurrency = size
 	}
 }
 
 // WithBucketRetries sets the default amount of retries for any given opperation
-func WithBucketRetries(i uint8) BucketOption {
-	return func(b *bucketBuilder) error {
-		b.retries = int(i)
+func WithBucketRetries(i int) BucketOption {
+	return func(b *bucketBuilder) {
+		if i < 1 {
+			i = 1
+		}
 
-		return nil
+		b.retries = i
 	}
 }
 
 // WithBucketLogger sets the default logger for any opperation.
 // Setting the logger provides debug logs.
 func WithBucketLogger(logger *slog.Logger) BucketOption {
-	return func(b *bucketBuilder) error {
-		if logger != nil {
-			b.logger = logger
+	return func(b *bucketBuilder) {
+		if logger == nil {
+			logger = noopLogger
 		}
 
-		return nil
+		b.logger = logger
 	}
 }
