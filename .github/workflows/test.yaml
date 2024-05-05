@@ -30,10 +30,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version-file: v2/go.mod
-          cache-dependency-path: v2/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Test
-        run: |
-          cd v2
-          go test -v ./...
+        run: go test -v ./...

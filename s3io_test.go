@@ -1,4 +1,4 @@
-package s3io
+package s3io_test
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"path"
@@ -15,6 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jobstoit/s3io/v2"
+)
+
+var (
+	buf12MB    = make([]byte, 1024*1024*12)
+	buf2MB     = make([]byte, 1024*1024*2)
+	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 )
 
 func TestReadWrite(t *testing.T) {
@@ -30,7 +36,7 @@ func TestReadWrite(t *testing.T) {
 	testFile(t, bucket, "smallish size file", "data/test-smallish.txt", io.LimitReader(rand.Reader, 1024*1024*18+291))
 	testFile(t, bucket, "small size file", "data/test-small.txt", io.LimitReader(rand.Reader, 1024*512+342))
 	testFile(t, bucket, "medium size file", "data/test-medium.txt", io.LimitReader(rand.Reader, 1024*1024*358+572))
-	// testFile(t, bucket, "large size file", "data/test-large.txt", io.LimitReader(rand.Reader, 1024*1024*1024*2+812))
+	testFile(t, bucket, "large size file", "data/test-large.txt", io.LimitReader(rand.Reader, 1024*1024*1024*2+812))
 }
 
 func BenchmarkAgainstManager(b *testing.B) {
@@ -43,21 +49,16 @@ func BenchmarkAgainstManager(b *testing.B) {
 	}
 
 	fileName := "benchmark.txt"
-	// var fileSize int64 = 1024 * 1024 * 1024 * 1 // 1Gb
+	bucketName := bucket.Name()
 	var fileSize int64 = 1024 * 1024 * 120 // 120Mb
 
 	b.Run("fs upload", func(b *testing.B) {
-		wr, err := bucket.NewWriter(ctx, fileName, WithWriterLogger(noopLogger))
-		if err != nil {
-			b.Errorf("error opening writer: %v", err)
-			return
-		}
+		wr := bucket.NewWriter(ctx, fileName, s3io.WithWriterLogger(noopLogger))
 		defer wr.Close()
 
 		_, err = io.Copy(wr, io.LimitReader(rand.Reader, fileSize))
 		if err != nil {
-			b.Errorf("error writing file: %v", err)
-			return
+			b.Fatalf("error writing file: %v", err)
 		}
 
 		if err = wr.Close(); err != nil {
@@ -69,7 +70,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 		uploader := manager.NewUploader(bucket.Client())
 
 		_, err := uploader.Upload(context.Background(), &s3.PutObjectInput{
-			Bucket: &bucket.name,
+			Bucket: &bucketName,
 			Key:    aws.String(fileName),
 			Body:   io.LimitReader(rand.Reader, fileSize),
 		})
@@ -79,11 +80,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("fs download", func(b *testing.B) {
-		rd, err := bucket.NewReader(ctx, fileName, WithReaderLogger(noopLogger))
-		if err != nil {
-			b.Errorf("error opening reader: %v", err)
-			return
-		}
+		rd := bucket.NewReader(ctx, fileName, s3io.WithReaderLogger(noopLogger))
 
 		// buf := bytes.NewBuffer(make([]byte, fileSize))
 		buf := io.Discard
@@ -99,7 +96,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 		// buf := discardWriterAt{}
 		buf := manager.NewWriteAtBuffer(make([]byte, fileSize))
 		_, err := downloader.Download(context.Background(), buf, &s3.GetObjectInput{
-			Bucket: &bucket.name,
+			Bucket: &bucketName,
 			Key:    aws.String(fileName),
 		})
 		if err != nil {
@@ -135,20 +132,14 @@ func TestLocalReadWrite(t *testing.T) {
 	fileName := path.Base(localFile)
 	dest := path.Join("data", fileName)
 
-	wr, err := bucket.NewWriter(ctx, dest)
-	if err != nil {
-		t.Errorf("error getting new writer: %v", err)
-		return
-	}
+	wr := bucket.NewWriter(ctx, dest)
 
 	if _, err := io.Copy(wr, srcFile); err != nil {
-		t.Errorf("error writing: %v", err)
-		return
+		t.Fatalf("error writing: %v", err)
 	}
 
 	if err := wr.Close(); err != nil {
-		t.Errorf("error writing on close: %v", err)
-		return
+		t.Fatalf("error writing on close: %v", err)
 	}
 
 	localDest := os.Getenv("S3IO_DEST")
@@ -156,25 +147,19 @@ func TestLocalReadWrite(t *testing.T) {
 		return
 	}
 
-	rd, err := bucket.NewReader(ctx, dest)
-	if err != nil {
-		t.Errorf("error opening new reader: %v", err)
-		return
-	}
+	rd := bucket.NewReader(ctx, dest)
 
 	destFile, err := os.OpenFile(localDest, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0777)
 	if err != nil {
-		t.Errorf("error opening local dest file: %v", err)
-		return
+		t.Fatalf("error opening local dest file: %v", err)
 	}
 
 	if _, err := io.Copy(destFile, rd); err != nil {
-		t.Errorf("error writing: %v", err)
-		return
+		t.Fatalf("error writing: %v", err)
 	}
 }
 
-func testFile(t *testing.T, bucket *Bucket, testName, filename string, src io.Reader) {
+func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src io.Reader) {
 	t.Run(testName, func(t *testing.T) {
 		t.Parallel()
 
@@ -182,47 +167,34 @@ func testFile(t *testing.T, bucket *Bucket, testName, filename string, src io.Re
 
 		writeHash := sha256.New()
 		success := t.Run("writing file", func(t *testing.T) {
-			wr, err := bucket.NewWriter(ctx, filename)
-			if err != nil {
-				t.Errorf("error creating new writer: %v", err)
-				t.FailNow()
-			}
+			wr := bucket.NewWriter(ctx, filename)
 
-			_, err = io.Copy(wr, io.TeeReader(src, writeHash))
+			_, err := io.Copy(wr, io.TeeReader(src, writeHash))
 			if err != nil {
-				t.Errorf("error writing object: %v", err)
-				return
+				t.Fatalf("error writing object: %v", err)
 			}
 
 			if err := wr.Close(); err != nil {
-				t.Errorf("error writing object on close: %v", err)
-				return
+				t.Fatalf("error writing object on close: %v", err)
 			}
 		})
 
 		if !success {
-			t.Fail()
-			return
+			t.FailNow()
 		}
 
 		readHash := sha256.New()
 		success = t.Run("reading file", func(t *testing.T) {
-			rd, err := bucket.NewReader(ctx, filename)
-			if err != nil {
-				t.Errorf("error creating new reader: %v", err)
-				return
-			}
+			rd := bucket.NewReader(ctx, filename)
 
-			_, err = io.Copy(readHash, rd)
+			_, err := io.Copy(readHash, rd)
 			if err != nil && err != io.EOF {
-				t.Errorf("error reading file: %v", err)
-				return
+				t.Fatalf("error reading file: %v", err)
 			}
 		})
 
 		if !success {
-			t.Fail()
-			return
+			t.FailNow()
 		}
 
 		writeSum := fmt.Sprintf("%x", writeHash.Sum(nil))
@@ -233,53 +205,7 @@ func testFile(t *testing.T, bucket *Bucket, testName, filename string, src io.Re
 	})
 }
 
-func ExampleObjectReader_Read() {
-	ctx := context.Background()
-
-	bucket, err := OpenBucket(ctx, "bucket-name",
-		WithBucketCredentials("access-key", "access-secret"),
-		WithBucketCreateIfNotExists(),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rd, err := bucket.NewReader(ctx, "path/to/object.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if _, err := io.Copy(os.Stdout, rd); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func ExampleObjectWriter_Write() {
-	ctx := context.Background()
-
-	bucket, err := OpenBucket(ctx, "bucket-name",
-		WithBucketCredentials("access-key", "access-secret"),
-		WithBucketCreateIfNotExists(),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	wr, err := bucket.NewWriter(ctx, "path/to/object.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if _, err := io.WriteString(wr, "hello world"); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := wr.Close(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func getTestBucket() (*Bucket, error) {
+func getTestBucket() (*s3io.Bucket, error) {
 	region := envOrDefault("AWS_REGION", "local")
 	bucketName := envOrDefault("AWS_BUCKET_NAME", "jobbitz-testing")
 	accessKey := envOrDefault("AWS_ACCESS_KEY_ID", "access_key")
@@ -294,13 +220,13 @@ func getTestBucket() (*Bucket, error) {
 		}))
 	}
 
-	bucket, err := OpenBucket(context.Background(),
+	bucket, err := s3io.OpenBucket(context.Background(),
 		bucketName,
-		WithBucketHost(endpoint, region, true),
-		WithBucketCredentials(accessKey, secretKey),
-		WithBucketRetries(3),
-		WithBucketCreateIfNotExists(),
-		WithBucketLogger(logger),
+		s3io.WithBucketHost(endpoint, region, true),
+		s3io.WithBucketCredentials(accessKey, secretKey),
+		s3io.WithBucketRetries(3),
+		s3io.WithBucketCreateIfNotExists(),
+		s3io.WithBucketLogger(logger),
 	)
 
 	return bucket, err
