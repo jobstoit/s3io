@@ -1,6 +1,7 @@
 package s3io_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +15,74 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jobstoit/s3io/v2"
 )
+
+func TestWriteAllFromBody(t *testing.T) {
+	s, ops, args := NewUploadLoggingClient(nil)
+
+	i, err := s3io.WriteAllFromBody(context.Background(), s, &s3.PutObjectInput{
+		Bucket: aws.String("bucket"),
+		Key:    aws.String("key"),
+		Body:   bytes.NewReader(buf12MB),
+	},
+		s3io.WithWriterChunkSize(1024*1024*7),
+		s3io.WithWriterConcurrency(1),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	vals := []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload"}
+	if !reflect.DeepEqual(vals, *ops) {
+		t.Errorf("expect %v, got %v", vals, *ops)
+	}
+
+	// Part lengths
+	if e, a := int64(1024*1024*7), getReaderLength((*args)[1].(*s3.UploadPartInput).Body); e != a {
+		t.Errorf("expect %d, got %d", e, a)
+	}
+
+	if e, a := int64(1024*1024*5), getReaderLength((*args)[2].(*s3.UploadPartInput).Body); e != a {
+		t.Errorf("expect %d, got %d", e, a)
+	}
+
+	if e, a := int64(len(buf12MB)), i; a != e {
+		t.Errorf("written byte length mismatch. expected: %d, actual: %d", e, a)
+	}
+}
+
+func TestWriteAllBytes(t *testing.T) {
+	s, ops, args := NewUploadLoggingClient(nil)
+
+	i, err := s3io.WriteAllBytes(context.Background(), s, &s3.PutObjectInput{
+		Bucket: aws.String("bucket"),
+		Key:    aws.String("key"),
+	},
+		buf12MB,
+		s3io.WithWriterChunkSize(1024*1024*7),
+		s3io.WithWriterConcurrency(1),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	vals := []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload"}
+	if !reflect.DeepEqual(vals, *ops) {
+		t.Errorf("expect %v, got %v", vals, *ops)
+	}
+
+	// Part lengths
+	if e, a := int64(1024*1024*7), getReaderLength((*args)[1].(*s3.UploadPartInput).Body); e != a {
+		t.Errorf("expect %d, got %d", e, a)
+	}
+
+	if e, a := int64(1024*1024*5), getReaderLength((*args)[2].(*s3.UploadPartInput).Body); e != a {
+		t.Errorf("expect %d, got %d", e, a)
+	}
+
+	if e, a := len(buf12MB), i; a != e {
+		t.Errorf("written byte length mismatch. expected: %d, actual: %d", e, a)
+	}
+}
 
 func TestObjectWriterSingePartUpload(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)

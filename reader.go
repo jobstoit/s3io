@@ -16,6 +16,13 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+// ReadAll reads all the bytes for a given object
+func ReadAll(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) ([]byte, error) {
+	rd := NewObjectReader(ctx, s3, input, opts...)
+
+	return io.ReadAll(rd)
+}
+
 // ObjectReader is an io.Reader implementation for an S3 Object
 type ObjectReader struct {
 	ctx           context.Context
