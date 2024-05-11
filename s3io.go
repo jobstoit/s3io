@@ -18,31 +18,6 @@ const (
 	defaultConcurrency = 5
 )
 
-// WriteAll writes to the given object using the input.Body
-func WriteAll(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...ObjectWriterOption) (int64, error) {
-	rd := input.Body
-	if rd == nil {
-		return 0, io.EOF
-	}
-
-	wr := NewObjectWriter(ctx, s3, input, opts...)
-	defer wr.Close()
-
-	n, err := io.Copy(wr, rd)
-	if err != nil {
-		return n, err
-	}
-
-	return n, wr.Close()
-}
-
-// ReadAll reads all the bytes for a given object
-func ReadAll(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) ([]byte, error) {
-	rd := NewObjectReader(ctx, s3, input, opts...)
-
-	return io.ReadAll(rd)
-}
-
 var noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // DownloadAPIClient is an S3 API client that can invoke the GetObject operation.
