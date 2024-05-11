@@ -33,7 +33,7 @@ func WriteAllFromBody(ctx context.Context, s3 UploadAPIClient, input *s3.PutObje
 
 // WriteAllBytes writes the given bytes into hte given object
 func WriteAllBytes(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, p []byte, opts ...ObjectWriterOption) (int, error) {
-	wr := NewObjectWriter(ctx, s3, input)
+	wr := NewObjectWriter(ctx, s3, input, opts...)
 	defer wr.Close()
 
 	n, err := wr.Write(p)
