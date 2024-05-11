@@ -13,6 +13,37 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+// WriteAllFromBody writes to the given object using the input.Body
+func WriteAllFromBody(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...ObjectWriterOption) (int64, error) {
+	rd := input.Body
+	if rd == nil {
+		return 0, io.EOF
+	}
+
+	wr := NewObjectWriter(ctx, s3, input, opts...)
+	defer wr.Close()
+
+	n, err := io.Copy(wr, rd)
+	if err != nil {
+		return n, err
+	}
+
+	return n, wr.Close()
+}
+
+// WriteAllBytes writes the given bytes into hte given object
+func WriteAllBytes(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, p []byte, opts ...ObjectWriterOption) (int, error) {
+	wr := NewObjectWriter(ctx, s3, input)
+	defer wr.Close()
+
+	n, err := wr.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	return n, wr.Close()
+}
+
 // ObjectWriter is an io.WriteCloser implementation for an s3 Object
 type ObjectWriter struct {
 	ctx           context.Context

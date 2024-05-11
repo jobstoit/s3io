@@ -137,6 +137,13 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReader
 	return rd
 }
 
+// ReadAll reads all the bytes of the given object
+func (b *Bucket) ReadAll(ctx context.Context, key string, opts ...ObjectReaderOption) ([]byte, error) {
+	rd := b.NewReader(ctx, key, opts...)
+
+	return io.ReadAll(rd)
+}
+
 // NewWriter returns a new ObjectWriter to do io.Write opparations with your s3 object
 func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriterOption) io.WriteCloser {
 	input := &s3.PutObjectInput{
@@ -158,6 +165,32 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriter
 	ObjectWriterOptions(opts...)(wr)
 
 	return wr
+}
+
+// WriteFrom writes all the bytes from the reader into the given object
+func (b *Bucket) WriteFrom(ctx context.Context, key string, from io.Reader, opts ...ObjectWriterOption) (int64, error) {
+	wr := b.NewWriter(ctx, key, opts...)
+	defer wr.Close()
+
+	n, err := io.Copy(wr, from)
+	if err != nil {
+		return n, err
+	}
+
+	return n, wr.Close()
+}
+
+// WriteAll writes all the given bytes into the given object
+func (b *Bucket) WriteAll(ctx context.Context, key string, p []byte, opts ...ObjectWriterOption) (int, error) {
+	wr := b.NewWriter(ctx, key, opts...)
+	defer wr.Close()
+
+	n, err := wr.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	return n, wr.Close()
 }
 
 // Client returns the s3 client the Bucket uses
