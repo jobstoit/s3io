@@ -399,3 +399,14 @@ func WithWriterClientOptions(opts ...func(*s3.Options)) ObjectWriterOption {
 		w.clientOptions = append(w.clientOptions, opts...)
 	}
 }
+
+// Set ACL after giving the input
+func WithWriterACL(acl types.ObjectCannedACL) ObjectWriterOption {
+	return func(w *ObjectWriter) {
+		if w.input == nil {
+			return
+		}
+
+		w.input.ACL = acl
+	}
+}
