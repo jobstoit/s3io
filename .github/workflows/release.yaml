@@ -1,0 +1,15 @@
+name: Release project
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Release
+        uses: huggingface/semver-release-action@latest
