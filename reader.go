@@ -78,7 +78,7 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 	ctx := r.ctx
 
 	input := *r.input
-	input.Range = aws.String("bytes=0-0")
+	input.Range = aws.String("bytes=0-8")
 
 	res, err := r.s3.GetObject(ctx, &input, r.clientOptions...)
 	if err != nil {
@@ -91,6 +91,8 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 				return nil, apiError
 			}
 		}
+
+		return nil, err
 	}
 
 	if res.Body != nil {
