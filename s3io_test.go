@@ -1,14 +1,18 @@
 package s3io_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"html/template"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,15 +25,63 @@ var (
 	buf12MB    = make([]byte, 1024*1024*12)
 	buf2MB     = make([]byte, 1024*1024*2)
 	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	createBucketMux = &sync.Mutex{}
 )
+
+func TestBucketFS(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	bucket, err := getTestBucket()
+	if err != nil {
+		t.Fatalf("unable to get test bucket: %v", err)
+	}
+
+	t.Run("bucket implements glob and fs", func(t *testing.T) {
+		var _ fs.GlobFS = bucket
+	})
+
+	t.Run("get fs template", func(t *testing.T) {
+		const templ = "templates/index.html.tmpl"
+
+		wr := bucket.NewWriter(ctx, templ)
+		if _, err := wr.Write([]byte("<p>{{.Message}}</p>")); err != nil {
+			t.Fatalf("unable to write template: %v", err)
+		}
+
+		if err := wr.Close(); err != nil {
+			t.Fatalf("unable to store template: %v", err)
+		}
+
+		engine, err := template.ParseFS(bucket, "templates/*.html.tmpl")
+		if err != nil {
+			t.Fatalf("unable to initialize template engine: %v", err)
+		}
+
+		buff := &bytes.Buffer{}
+		err = engine.ExecuteTemplate(
+			buff,
+			"index.html.tmpl",
+			map[string]string{"Message": "hello world"},
+		)
+		if err != nil {
+			t.Errorf("unable to execute template: %v", err)
+		}
+
+		if buff.String() != "<p>hello world</p>" {
+			t.Errorf("error unexpected message")
+		}
+	})
+}
 
 func TestReadWrite(t *testing.T) {
 	t.Parallel()
 
 	bucket, err := getTestBucket()
 	if err != nil {
-		t.Errorf("error getting test bucket: %v", err)
-		return
+		t.Fatalf("error getting test bucket: %v", err)
 	}
 
 	testFile(t, bucket, "exact smallish size file", "data/test-exact-smallish.txt", io.LimitReader(rand.Reader, 1024*1024*10))
@@ -44,7 +96,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 
 	bucket, err := getTestBucket()
 	if err != nil {
-		b.Errorf("error getting test bucket: %v", err)
+		b.Fatalf("error getting test bucket: %v", err)
 		return
 	}
 
@@ -106,7 +158,6 @@ func BenchmarkAgainstManager(b *testing.B) {
 }
 
 func TestLocalReadWrite(t *testing.T) {
-	t.Skip()
 	t.Parallel()
 
 	localFile := os.Getenv("S3IO_TESTFILE")
@@ -219,6 +270,9 @@ func getTestBucket() (*s3io.Bucket, error) {
 			Level:     slog.LevelDebug,
 		}))
 	}
+
+	createBucketMux.Lock()
+	defer createBucketMux.Unlock()
 
 	bucket, err := s3io.OpenBucket(context.Background(),
 		bucketName,

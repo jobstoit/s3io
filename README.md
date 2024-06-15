@@ -33,5 +33,9 @@ if err != nil {
 }
 
 _, err := io.Copy(os.Stdout, reader)
+
+
+// Use the bucket as fs.FS
+subSys, err := fs.Sub(bucket, "path/to/subdir")
 ...
 ```
