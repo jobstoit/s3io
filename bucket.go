@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -67,6 +68,7 @@ func (b *Bucket) Open(name string) (fs.File, error) {
 		chunkSize:   b.readChunkSize,
 		concurrency: b.concurrency,
 		logger:      b.logger,
+		closed:      &atomic.Bool{},
 	}
 
 	return rd, nil
@@ -165,6 +167,7 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReader
 		chunkSize:   b.readChunkSize,
 		concurrency: b.concurrency,
 		logger:      b.logger,
+		closed:      &atomic.Bool{},
 	}
 
 	ObjectReaderOptions(opts...)(rd)
