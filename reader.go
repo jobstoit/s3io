@@ -130,7 +130,9 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 
 // close is the io.Close implementation for the ObjectReader
 func (r *ObjectReader) Close() error {
-	r.closed.Store(true)
+	if r.closed.CompareAndSwap(false, true) && r.rd != nil {
+		r.rd.CloseWithError(io.EOF)
+	}
 
 	return nil
 }
@@ -160,16 +162,23 @@ func (r *ObjectReader) Read(p []byte) (int, error) {
 
 func (r *ObjectReader) preRead() error {
 	ctx := r.ctx
+	rd, wr := io.Pipe()
+
+	r.rd = rd
+
 	stats, err := r.Stat()
 	if err != nil {
+		closeErr := err
+		if errors.Is(err, fs.ErrNotExist) {
+			closeErr = io.EOF
+		}
+
+		defer rd.CloseWithError(closeErr)
+
 		return err
 	}
 
 	contentLen := stats.Size()
-
-	rd, wr := io.Pipe()
-
-	r.rd = rd
 
 	r.logger.Debug("pre read", slog.Int64("content-length", contentLen))
 	cl := newConcurrencyLock(r.concurrency)
