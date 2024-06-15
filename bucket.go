@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+	"strings"
 	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -77,7 +78,10 @@ func (b *Bucket) Open(name string) (fs.File, error) {
 
 // Glob is an implementation of fs.GlobFS
 func (b *Bucket) Glob(pattern string) ([]string, error) {
-	objs, err := b.List(context.Background(), "/")
+	prefix := strings.Split(pattern, "*")[0]
+	prefix = strings.Split(prefix, "[")[0]
+
+	objs, err := b.List(context.Background(), prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +172,17 @@ func (b *Bucket) Delete(ctx context.Context, keys ...string) error {
 //
 // Use the prefix "/" to list all the objects in the bucket.
 func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error) {
+	pre := &prefix
+	if prefix == "" {
+		pre = nil
+	}
+
 	objs := []types.Object{}
 	continuationToken := (*string)(nil)
 	for {
 		res, err := b.cli.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            &b.name,
-			Prefix:            &prefix,
+			Prefix:            pre,
 			ContinuationToken: continuationToken,
 		})
 		if err != nil {
