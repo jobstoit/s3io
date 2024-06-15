@@ -62,12 +62,7 @@ func TestBucketFS(t *testing.T) {
 			}
 		}
 
-		subfs, err := fs.Sub(bucket, "templates")
-		if err != nil {
-			t.Fatalf("unable to open sub fs: %v", err)
-		}
-
-		engine, err := template.ParseFS(subfs, "templates/*.html.tmpl")
+		engine, err := template.ParseFS(bucket, "templates/*.html.tmpl")
 		if err != nil {
 			t.Fatalf("unable to initialize template engine: %v", err)
 		}
