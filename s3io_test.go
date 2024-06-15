@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,6 +25,8 @@ var (
 	buf12MB    = make([]byte, 1024*1024*12)
 	buf2MB     = make([]byte, 1024*1024*2)
 	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	createBucketMux = &sync.Mutex{}
 )
 
 func TestBucketFS(t *testing.T) {
@@ -279,6 +282,9 @@ func getTestBucket() (*s3io.Bucket, error) {
 			Level:     slog.LevelDebug,
 		}))
 	}
+
+	createBucketMux.Lock()
+	defer createBucketMux.Unlock()
 
 	bucket, err := s3io.OpenBucket(context.Background(),
 		bucketName,
