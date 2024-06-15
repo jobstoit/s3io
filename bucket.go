@@ -177,7 +177,7 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error
 		pre = nil
 	}
 
-	objs := []types.Object{}
+	objs := make([]types.Object, 0)
 	continuationToken := (*string)(nil)
 	for {
 		res, err := b.cli.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
