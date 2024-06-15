@@ -86,7 +86,7 @@ func (b *Bucket) Glob(pattern string) ([]string, error) {
 		return nil, err
 	}
 
-	matches := make([]string, len(objs))
+	matches := make([]string, 0)
 	for _, obj := range objs {
 		if obj.Key == nil {
 			continue
@@ -97,7 +97,7 @@ func (b *Bucket) Glob(pattern string) ([]string, error) {
 			return matches, err
 		}
 
-		if ok {
+		if ok && key != "" {
 			matches = append(matches, key)
 		}
 	}
