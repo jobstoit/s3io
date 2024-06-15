@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"path"
 	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -72,6 +73,32 @@ func (b *Bucket) Open(name string) (fs.File, error) {
 	}
 
 	return rd, nil
+}
+
+// Glob is an implementation of fs.GlobFS
+func (b *Bucket) Glob(pattern string) ([]string, error) {
+	objs, err := b.List(context.Background(), "/")
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]string, len(objs))
+	for _, obj := range objs {
+		if obj.Key == nil {
+			continue
+		}
+		key := *obj.Key
+		ok, err := path.Match(pattern, *obj.Key)
+		if err != nil {
+			return matches, err
+		}
+
+		if ok {
+			matches = append(matches, key)
+		}
+	}
+
+	return matches, nil
 }
 
 // Exists returns a a boolean indicating whether the requested object exists.
@@ -141,15 +168,25 @@ func (b *Bucket) Delete(ctx context.Context, keys ...string) error {
 //
 // Use the prefix "/" to list all the objects in the bucket.
 func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error) {
-	res, err := b.cli.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-		Bucket: &b.name,
-		Prefix: &prefix,
-	})
-	if err != nil {
-		return nil, err
-	}
+	objs := []types.Object{}
+	continuationToken := (*string)(nil)
+	for {
+		res, err := b.cli.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &b.name,
+			Prefix:            &prefix,
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return objs, err
+		}
 
-	return res.Contents, nil
+		objs = append(objs, res.Contents...)
+		if res.NextContinuationToken == nil {
+			return objs, nil
+		}
+
+		continuationToken = res.NextContinuationToken
+	}
 }
 
 // NewReader returns a new ObjectReader to do io.Reader opperations with your s3 object
