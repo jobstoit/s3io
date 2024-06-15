@@ -39,8 +39,8 @@ func TestBucketFS(t *testing.T) {
 		t.Fatalf("unable to get test bucket: %v", err)
 	}
 
-	t.Run("bucket implements fs", func(t *testing.T) {
-		var _ fs.FS = bucket
+	t.Run("bucket implements glob and fs", func(t *testing.T) {
+		var _ fs.GlobFS = bucket
 	})
 
 	t.Run("get fs template", func(t *testing.T) {
