@@ -46,20 +46,13 @@ func TestBucketFS(t *testing.T) {
 	t.Run("get fs template", func(t *testing.T) {
 		const templ = "templates/index.html.tmpl"
 
-		ok, err := bucket.Exists(ctx, templ)
-		if err != nil {
-			t.Fatalf("unable to check if file exists: %v", err)
+		wr := bucket.NewWriter(ctx, templ)
+		if _, err := wr.Write([]byte("<p>{{.Message}}</p>")); err != nil {
+			t.Fatalf("unable to write template: %v", err)
 		}
 
-		if !ok {
-			wr := bucket.NewWriter(ctx, templ)
-			if _, err := wr.Write([]byte("<p>{{.Message}}</p>")); err != nil {
-				t.Fatalf("unable to write template: %v", err)
-			}
-
-			if err := wr.Close(); err != nil {
-				t.Fatalf("unable to store template: %v", err)
-			}
+		if err := wr.Close(); err != nil {
+			t.Fatalf("unable to store template: %v", err)
 		}
 
 		engine, err := template.ParseFS(bucket, "templates/*.html.tmpl")
