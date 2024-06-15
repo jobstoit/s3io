@@ -1,10 +1,12 @@
 package s3io_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -24,10 +26,63 @@ var (
 	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 )
 
-func TestBucketImplementsFSFS(t *testing.T) {
+func TestBucketFS(t *testing.T) {
 	t.Parallel()
 
-	var _ fs.FS = &s3io.Bucket{}
+	ctx := context.Background()
+
+	bucket, err := getTestBucket()
+	if err != nil {
+		t.Fatalf("unable to get test bucket: %v", err)
+	}
+
+	t.Run("bucket implements fs", func(t *testing.T) {
+		var _ fs.FS = bucket
+	})
+
+	t.Run("get fs template", func(t *testing.T) {
+		const templ = "templates/index.html.tmpl"
+
+		ok, err := bucket.Exists(ctx, templ)
+		if err != nil {
+			t.Fatalf("unable to check if file exists: %v", err)
+		}
+
+		if !ok {
+			wr := bucket.NewWriter(ctx, templ)
+			if _, err := wr.Write([]byte("<p>{{.Message}}</p>")); err != nil {
+				t.Fatalf("unable to write template: %v", err)
+			}
+
+			if err := wr.Close(); err != nil {
+				t.Fatalf("unable to store template: %v", err)
+			}
+		}
+
+		subfs, err := fs.Sub(bucket, "templates/")
+		if err != nil {
+			t.Fatalf("unable to open sub fs: %v", err)
+		}
+
+		engine, err := template.ParseFS(subfs)
+		if err != nil {
+			t.Fatalf("unable to initialize template engine: %v", err)
+		}
+
+		buff := &bytes.Buffer{}
+		err = engine.ExecuteTemplate(
+			buff,
+			"index.html.tmpl",
+			map[string]string{"Message": "hello world"},
+		)
+		if err != nil {
+			t.Errorf("unable to execute template: %v", err)
+		}
+
+		if buff.String() != "<p>hello world</p>" {
+			t.Errorf("error unexpected message")
+		}
+	})
 }
 
 func TestReadWrite(t *testing.T) {
@@ -35,8 +90,7 @@ func TestReadWrite(t *testing.T) {
 
 	bucket, err := getTestBucket()
 	if err != nil {
-		t.Errorf("error getting test bucket: %v", err)
-		return
+		t.Fatalf("error getting test bucket: %v", err)
 	}
 
 	testFile(t, bucket, "exact smallish size file", "data/test-exact-smallish.txt", io.LimitReader(rand.Reader, 1024*1024*10))
@@ -51,7 +105,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 
 	bucket, err := getTestBucket()
 	if err != nil {
-		b.Errorf("error getting test bucket: %v", err)
+		b.Fatalf("error getting test bucket: %v", err)
 		return
 	}
 
@@ -113,7 +167,6 @@ func BenchmarkAgainstManager(b *testing.B) {
 }
 
 func TestLocalReadWrite(t *testing.T) {
-	t.Skip()
 	t.Parallel()
 
 	localFile := os.Getenv("S3IO_TESTFILE")
