@@ -59,7 +59,7 @@ func TestBucketFS(t *testing.T) {
 			}
 		}
 
-		subfs, err := fs.Sub(bucket, "templates/")
+		subfs, err := fs.Sub(bucket, "templates")
 		if err != nil {
 			t.Fatalf("unable to open sub fs: %v", err)
 		}
