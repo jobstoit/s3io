@@ -119,9 +119,9 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 	}
 
 	fi := fileInfo{
-		name:        *r.input.Key,
+		name:        aws.ToString(r.input.Key),
 		size:        contentLen,
-		lastUpdated: *res.LastModified,
+		lastUpdated: aws.ToTime(res.LastModified),
 		rd:          r,
 	}
 
