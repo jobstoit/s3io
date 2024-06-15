@@ -92,7 +92,10 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 			}
 		}
 	}
-	defer res.Body.Close()
+
+	if res.Body != nil {
+		defer res.Body.Close()
+	}
 
 	var contentLen int64
 	if res.ContentRange == nil {
