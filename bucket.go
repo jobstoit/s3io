@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -35,6 +36,40 @@ func OpenBucketkwithClient(ctx context.Context, cli *s3.Client, name string, opt
 	BucketOptions(append(opts, WithBucketCli(cli))...)(builder)
 
 	return builder.Build(ctx, name)
+}
+
+// Open is the fs.FS implenentation for the Bucket.
+//
+// Open returns an fs.ErrInvalid argument if there was an error in checking if the file exists
+// and an fs.ErrNotExists if the object doesn't exist
+func (b *Bucket) Open(name string) (fs.File, error) {
+	ctx := context.Background()
+
+	exists, err := b.Exists(ctx, name)
+	if err != nil {
+		return nil, fs.ErrInvalid
+	}
+
+	if !exists {
+		return nil, fs.ErrNotExist
+	}
+
+	input := &s3.GetObjectInput{
+		Bucket: &b.name,
+		Key:    &name,
+	}
+
+	rd := &ObjectReader{
+		ctx:         ctx,
+		s3:          b.cli,
+		input:       input,
+		retries:     defaultRetries,
+		chunkSize:   b.readChunkSize,
+		concurrency: b.concurrency,
+		logger:      b.logger,
+	}
+
+	return rd, nil
 }
 
 // Exists returns a a boolean indicating whether the requested object exists.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -15,6 +16,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jobstoit/s3io/v2"
 )
+
+func TestImplementFSFile(t *testing.T) {
+	t.Parallel()
+
+	var _ fs.File = &s3io.ObjectReader{}
+}
+
+func TestImplementIOReader(t *testing.T) {
+	t.Parallel()
+
+	var _ io.Reader = &s3io.ObjectReader{}
+}
 
 func TestReadAll(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)

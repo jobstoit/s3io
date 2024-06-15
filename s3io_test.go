@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path"
@@ -22,6 +23,12 @@ var (
 	buf2MB     = make([]byte, 1024*1024*2)
 	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 )
+
+func TestBucketImplementsFSFS(t *testing.T) {
+	t.Parallel()
+
+	var _ fs.FS = &s3io.Bucket{}
+}
 
 func TestReadWrite(t *testing.T) {
 	t.Parallel()

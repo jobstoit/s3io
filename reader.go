@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -34,6 +36,7 @@ type ObjectReader struct {
 	retries       int
 	clientOptions []func(*s3.Options)
 	input         *s3.GetObjectInput
+	closed        *atomic.Bool
 }
 
 // NewObjectReader returns a new ObjectReader to do io.Reader opperations on your s3 object
@@ -46,6 +49,7 @@ func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObj
 		chunkSize:   DefaultChunkSize,
 		concurrency: defaultConcurrency,
 		logger:      noopLogger,
+		closed:      &atomic.Bool{},
 	}
 
 	ObjectReaderOptions(opts...)(rd)
@@ -53,10 +57,10 @@ func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObj
 	return rd
 }
 
-// ObjectReaderOption is an option for the given read operation
+// ObjectReaderOption is an option for the given read operation.
 type ObjectReaderOption func(*ObjectReader)
 
-// ObjectReaderOptions is a collection of ObjectReaderOption's
+// ObjectReaderOptions is a collection of ObjectReaderOption's.
 func ObjectReaderOptions(opts ...ObjectReaderOption) ObjectReaderOption {
 	return func(r *ObjectReader) {
 		for _, op := range opts {
@@ -65,30 +69,13 @@ func ObjectReaderOptions(opts ...ObjectReaderOption) ObjectReaderOption {
 	}
 }
 
-// Read is the io.Reader implementation for the ObjectReader.
-//
-// It returns an fs.ErrNotExists if the object doesn't exist in the given bucket.
-// And returns an io.EOF when all bytes are read.
-func (r *ObjectReader) Read(p []byte) (int, error) {
-	if r.rd == nil {
-		if err := r.preRead(); err != nil {
-			return 0, err
-		}
+// Stat is the fs.File implementaion for the ObjectReader.
+func (r *ObjectReader) Stat() (fs.FileInfo, error) {
+	if r.closed.Load() {
+		return nil, fs.ErrClosed
 	}
 
-	c, err := r.rd.Read(p)
-	if err != nil && err == io.ErrClosedPipe {
-		err = fs.ErrClosed
-	}
-
-	return c, err
-}
-
-func (r *ObjectReader) preRead() error {
 	ctx := r.ctx
-	rd, wr := io.Pipe()
-
-	r.rd = rd
 
 	input := *r.input
 	input.Range = aws.String("bytes=0-0")
@@ -99,11 +86,9 @@ func (r *ObjectReader) preRead() error {
 		if errors.As(err, &apiError) {
 			switch apiError.(type) {
 			case *types.NotFound:
-				rd.CloseWithError(io.EOF)
-
-				return fs.ErrNotExist
+				return nil, fs.ErrNotExist
 			default:
-				return apiError
+				return nil, apiError
 			}
 		}
 	}
@@ -126,12 +111,65 @@ func (r *ObjectReader) preRead() error {
 		if totalStr != "*" {
 			total, err = strconv.ParseInt(totalStr, 10, 64)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 
 		contentLen = total
 	}
+
+	fi := fileInfo{
+		name:        *r.input.Key,
+		size:        contentLen,
+		lastUpdated: *res.LastModified,
+		rd:          r,
+	}
+
+	return fi, nil
+}
+
+// close is the io.Close implementation for the ObjectReader
+func (r *ObjectReader) Close() error {
+	r.closed.Store(true)
+
+	return nil
+}
+
+// Read is the io.Reader implementation for the ObjectReader.
+//
+// It returns an fs.ErrNotExists if the object doesn't exist in the given bucket.
+// And returns an io.EOF when all bytes are read.
+func (r *ObjectReader) Read(p []byte) (int, error) {
+	if r.closed.Load() {
+		return 0, fs.ErrClosed
+	}
+
+	if r.rd == nil {
+		if err := r.preRead(); err != nil {
+			return 0, err
+		}
+	}
+
+	c, err := r.rd.Read(p)
+	if err != nil && err == io.ErrClosedPipe {
+		err = fs.ErrClosed
+	}
+
+	return c, err
+}
+
+func (r *ObjectReader) preRead() error {
+	ctx := r.ctx
+	stats, err := r.Stat()
+	if err != nil {
+		return err
+	}
+
+	contentLen := stats.Size()
+
+	rd, wr := io.Pipe()
+
+	r.rd = rd
 
 	r.logger.Debug("pre read", slog.Int64("content-length", contentLen))
 	cl := newConcurrencyLock(r.concurrency)
@@ -265,4 +303,36 @@ func WithReaderS3Options(opts ...func(*s3.Options)) ObjectReaderOption {
 	return func(r *ObjectReader) {
 		r.clientOptions = append(r.clientOptions, opts...)
 	}
+}
+
+// fileInfo is the fs.FileInfo implenentation for the ObjectReader
+type fileInfo struct {
+	name        string
+	size        int64
+	lastUpdated time.Time
+	rd          *ObjectReader
+}
+
+func (f fileInfo) Name() string {
+	return f.name
+}
+
+func (f fileInfo) Size() int64 {
+	return f.size
+}
+
+func (f fileInfo) Mode() fs.FileMode {
+	return fs.ModePerm
+}
+
+func (f fileInfo) ModTime() time.Time {
+	return f.lastUpdated
+}
+
+func (f fileInfo) IsDir() bool {
+	return false
+}
+
+func (f fileInfo) Sys() any {
+	return f.rd
 }
