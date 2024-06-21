@@ -205,20 +205,13 @@ func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReader
 		Key:    &key,
 	}
 
-	rd := &ObjectReader{
-		ctx:         ctx,
-		s3:          b.cli,
-		input:       input,
-		retries:     defaultRetries,
-		chunkSize:   b.readChunkSize,
-		concurrency: b.concurrency,
-		logger:      b.logger,
-		closed:      &atomic.Bool{},
+	bucketOpts := []ObjectReaderOption{
+		WithReaderChunkSize(b.readChunkSize),
+		WithReaderConcurrency(b.concurrency),
+		WithReaderLogger(b.logger),
 	}
 
-	ObjectReaderOptions(opts...)(rd)
-
-	return rd
+	return NewObjectReader(ctx, b.cli, input, append(bucketOpts, opts...)...)
 }
 
 // ReadAll reads all the bytes of the given object
@@ -235,20 +228,13 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriter
 		Key:    &key,
 	}
 
-	wr := &ObjectWriter{
-		ctx:         ctx,
-		s3:          b.cli,
-		input:       input,
-		chunkSize:   b.writeChunkSize,
-		concurrency: b.concurrency,
-		logger:      b.logger,
-
-		closingErr: make(chan error, 1),
+	bucketOpts := []ObjectWriterOption{
+		WithWriterChunkSize(b.writeChunkSize),
+		WithWriterConcurrency(b.concurrency),
+		WithWriterLogger(b.logger),
 	}
 
-	ObjectWriterOptions(opts...)(wr)
-
-	return wr
+	return NewObjectWriter(ctx, b.cli, input, append(bucketOpts, opts...)...)
 }
 
 // WriteFrom writes all the bytes from the reader into the given object
