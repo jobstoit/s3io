@@ -76,6 +76,8 @@ func NewObjectWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjec
 
 	ObjectWriterOptions(opts...)(wr)
 
+	wr.preWrite()
+
 	return wr
 }
 
@@ -95,12 +97,6 @@ func ObjectWriterOptions(opts ...ObjectWriterOption) ObjectWriterOption {
 //
 // The object is stored when the Close method is called.
 func (w *ObjectWriter) Write(p []byte) (int, error) {
-	if w.wr == nil {
-		if err := w.preWrite(); err != nil {
-			return 0, err
-		}
-	}
-
 	return w.wr.Write(p)
 }
 
@@ -122,7 +118,7 @@ func (w *ObjectWriter) Close() error {
 	return err
 }
 
-func (w *ObjectWriter) preWrite() error {
+func (w *ObjectWriter) preWrite() {
 	ctx := w.ctx
 	rd, wr := io.Pipe()
 
@@ -131,8 +127,6 @@ func (w *ObjectWriter) preWrite() error {
 
 	w.wg.Add(1)
 	go w.writeChunk(ctx, rd, cl, nil, 1)
-
-	return nil
 }
 
 func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *concurrencyLock, uploadID *string, partNr int32) {
