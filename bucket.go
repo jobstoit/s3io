@@ -3,9 +3,11 @@ package s3io
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"path"
 	"strings"
 	"sync/atomic"
@@ -13,6 +15,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+)
+
+var (
+	ErrInvalidScheme url.InvalidHostError = "url doesn't start with s3 scheme"
+	ErrNoBucketName  url.InvalidHostError = "no bucketname"
+	ErrNoCredentials url.InvalidHostError = "missing credentials"
 )
 
 // Bucket is an abstraction to interact with objects in your S3 bucket
@@ -23,6 +31,51 @@ type Bucket struct {
 	concurrency    int
 	logger         *slog.Logger
 	cli            *s3.Client
+}
+
+// OpenURL opens the bucket with all the connection options in the url.
+// The url is written as: s3://access-key:access-secret@host/bucketname?region=us-east.
+// the url assumes the host has a https protocol unless the "insecure" query param is set to "true".
+// to crete the bucket if it doesn't exist set the "create" query param to "true".
+func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, error) {
+	pu, err := url.Parse(u)
+	if err != nil {
+		return nil, err
+	}
+
+	if pu.Scheme != "s3" {
+		return nil, ErrInvalidScheme
+	}
+
+	bucketName := ""
+	if pathChunks := strings.Split(pu.Path, "/"); len(pathChunks) > 1 {
+		bucketName = pathChunks[1]
+	}
+
+	if bucketName == "" {
+		return nil, ErrNoBucketName
+	}
+
+	accessSecret, ok := pu.User.Password()
+	if !ok {
+		return nil, ErrNoCredentials
+	}
+
+	protocol := "https"
+	if pu.Query().Get("insecure") == "true" {
+		protocol = "http"
+	}
+
+	urlOpts := []BucketOption{
+		WithBucketHost(fmt.Sprintf("%s://%s", protocol, pu.Host), pu.Query().Get("region"), true),
+		WithBucketCredentials(pu.User.Username(), accessSecret),
+	}
+
+	if pu.Query().Get("create") == "true" {
+		urlOpts = append(urlOpts, WithBucketCreateIfNotExists())
+	}
+
+	return OpenBucket(ctx, bucketName, append(urlOpts, opts...)...)
 }
 
 // OpenBucket returns a bucket to interact with.
