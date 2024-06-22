@@ -36,6 +36,7 @@ type Bucket struct {
 // OpenURL opens the bucket with all the connection options in the url.
 // The url is written as: s3://access-key:access-secret@host/bucketname?region=us-east.
 // the url assumes the host has a https protocol unless the "insecure" query param is set to "true".
+// to crete the bucket if it doesn't exist set the "create" query param to "true".
 func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, error) {
 	pu, err := url.Parse(u)
 	if err != nil {
@@ -69,6 +70,11 @@ func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, erro
 		WithBucketHost(fmt.Sprintf("%s://%s", protocol, pu.Host), pu.Query().Get("region"), true),
 		WithBucketCredentials(pu.User.Username(), accessSecret),
 	}
+
+	if pu.Query().Get("create") == "true" {
+		urlOpts = append(urlOpts, WithBucketCreateIfNotExists())
+	}
+
 	return OpenBucket(ctx, bucketName, append(urlOpts, opts...)...)
 }
 

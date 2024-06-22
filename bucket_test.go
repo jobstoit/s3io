@@ -11,8 +11,6 @@ import (
 )
 
 func TestOpenUrl(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
 
 	_, err := s3io.OpenURL(ctx, "http://eliot@example.com/test")
@@ -42,7 +40,7 @@ func TestOpenUrl(t *testing.T) {
 		insecure = "true"
 	}
 
-	u := fmt.Sprintf("s3://%s:%s@%s/%s?region=%s&insecure=%s", accessKey, secretKey, endpointURL.Host, bucketName, region, insecure)
+	u := fmt.Sprintf("s3://%s:%s@%s/%s?region=%s&insecure=%s&create=true", accessKey, secretKey, endpointURL.Host, bucketName, region, insecure)
 
 	_, err = s3io.OpenURL(ctx, u)
 	if err != nil {
