@@ -11,6 +11,8 @@ import (
 )
 
 func TestOpenUrl(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	_, err := s3io.OpenURL(ctx, "http://eliot@example.com/test")
