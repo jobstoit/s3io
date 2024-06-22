@@ -35,7 +35,12 @@ func TestOpenUrl(t *testing.T) {
 	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 	endpointURL, _ := url.Parse(endpoint)
 
-	u := fmt.Sprintf("s3://%s:%s@%s/%s?region=%s", accessKey, secretKey, endpointURL.Host, bucketName, region)
+	insecure := "false"
+	if endpointURL.Scheme == "http" {
+		insecure = "true"
+	}
+
+	u := fmt.Sprintf("s3://%s:%s@%s/%s?region=%s&insecure=%s", accessKey, secretKey, endpointURL.Host, bucketName, region, insecure)
 
 	_, err = s3io.OpenURL(ctx, u)
 	if err != nil {
