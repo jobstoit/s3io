@@ -18,10 +18,17 @@ import (
 )
 
 var (
-	ErrInvalidScheme url.InvalidHostError = "url doesn't start with s3 scheme"
-	ErrNoBucketName  url.InvalidHostError = "no bucketname"
-	ErrNoCredentials url.InvalidHostError = "missing credentials"
+	ErrInvalidScheme BucketURIError = "url doesn't start with s3 scheme"
+	ErrNoBucketName  BucketURIError = "no bucketname"
+	ErrNoCredentials BucketURIError = "missing credentials"
 )
+
+// BucketURIError
+type BucketURIError string
+
+func (b BucketURIError) Error() string {
+	return fmt.Sprintf("invalid bucket uri: '%s'", string(b))
+}
 
 // Bucket is an abstraction to interact with objects in your S3 bucket
 type Bucket struct {
