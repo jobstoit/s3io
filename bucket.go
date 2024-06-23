@@ -41,9 +41,11 @@ type Bucket struct {
 }
 
 // OpenURL opens the bucket with all the connection options in the url.
-// The url is written as: s3://access-key:access-secret@host/bucketname?region=us-east.
-// the url assumes the host has a https protocol unless the "insecure" query param is set to "true".
-// to crete the bucket if it doesn't exist set the "create" query param to "true".
+// The url is written as: s3://access-key:access-secret@host/bucketname?region=us-east&pathstyle=true
+//
+// The url assumes the host has a https protocol unless the "insecure" query param is set to "true".
+// To create the bucket if it doesn't exist set the "create" query param to "true".
+// To use the pathstyle url set "pathstyle" to "true"
 func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, error) {
 	pu, err := url.Parse(u)
 	if err != nil {
@@ -53,6 +55,8 @@ func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, erro
 	if pu.Scheme != "s3" {
 		return nil, ErrInvalidScheme
 	}
+
+	query := pu.Query()
 
 	bucketName := ""
 	if pathChunks := strings.Split(pu.Path, "/"); len(pathChunks) > 1 {
@@ -68,17 +72,22 @@ func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, erro
 		return nil, ErrNoCredentials
 	}
 
-	protocol := "https"
-	if pu.Query().Get("insecure") == "true" {
-		protocol = "http"
-	}
-
 	urlOpts := []BucketOption{
-		WithBucketHost(fmt.Sprintf("%s://%s", protocol, pu.Host), pu.Query().Get("region"), true),
 		WithBucketCredentials(pu.User.Username(), accessSecret),
 	}
 
-	if pu.Query().Get("create") == "true" {
+	if pu.Host != "" {
+		pathStyle := query.Get("pathstyle") == "true"
+
+		protocol := "https"
+		if query.Get("insecure") == "true" {
+			protocol = "http"
+		}
+
+		urlOpts = append(urlOpts, WithBucketHost(fmt.Sprintf("%s://%s", protocol, pu.Host), query.Get("region"), pathStyle))
+	}
+
+	if query.Get("create") == "true" {
 		urlOpts = append(urlOpts, WithBucketCreateIfNotExists())
 	}
 
