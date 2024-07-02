@@ -1,6 +1,6 @@
 module github.com/jobstoit/s3io/v2
 
-go 1.22.2
+go 1.22
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.30.1

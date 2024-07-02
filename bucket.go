@@ -268,7 +268,7 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]types.Object, error
 }
 
 // NewReader returns a new ObjectReader to do io.Reader opperations with your s3 object
-func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) io.Reader {
+func (b *Bucket) NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) io.ReadCloser {
 	input := &s3.GetObjectInput{
 		Bucket: &b.name,
 		Key:    &key,

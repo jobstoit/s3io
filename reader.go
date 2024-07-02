@@ -40,7 +40,7 @@ type ObjectReader struct {
 }
 
 // NewObjectReader returns a new ObjectReader to do io.Reader opperations on your s3 object
-func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) io.Reader {
+func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) io.ReadCloser {
 	rd := &ObjectReader{
 		ctx:         ctx,
 		s3:          s3,
