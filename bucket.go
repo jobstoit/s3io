@@ -37,7 +37,26 @@ type Bucket struct {
 	writeChunkSize int64
 	concurrency    int
 	logger         *slog.Logger
-	cli            *s3.Client
+	cli            BucketApiClient
+}
+
+// NewRawBucket returns a new bucket instance.
+// For normal operations use OpenBucket instead as this will connect and verify the bucket.
+func NewRawBucket(
+	name string,
+	readChunkSize, writeChunkSize int64,
+	concurrency int,
+	logger *slog.Logger,
+	cli BucketApiClient,
+) *Bucket {
+	return &Bucket{
+		name,
+		readChunkSize,
+		writeChunkSize,
+		concurrency,
+		logger,
+		cli,
+	}
 }
 
 // OpenURL opens the bucket with all the connection options in the url.
@@ -45,7 +64,7 @@ type Bucket struct {
 //
 // The url assumes the host has a https protocol unless the "insecure" query param is set to "true".
 // To create the bucket if it doesn't exist set the "create" query param to "true".
-// To use the pathstyle url set "pathstyle" to "true"
+// To use the pathstyle url set "pathstyle" to "true".
 func OpenURL(ctx context.Context, u string, opts ...BucketOption) (*Bucket, error) {
 	pu, err := url.Parse(u)
 	if err != nil {
@@ -307,6 +326,8 @@ func (b *Bucket) NewWriter(ctx context.Context, key string, opts ...ObjectWriter
 }
 
 // WriteFrom writes all the bytes from the reader into the given object
+//
+// Deprecated: use the improved and better named ReadFrom instead
 func (b *Bucket) WriteFrom(ctx context.Context, key string, from io.Reader, opts ...ObjectWriterOption) (int64, error) {
 	wr := b.NewWriter(ctx, key, opts...)
 	defer wr.Close()
@@ -334,10 +355,68 @@ func (b *Bucket) WriteAll(ctx context.Context, key string, p []byte, opts ...Obj
 
 // Client returns the s3 client the Bucket uses
 func (b *Bucket) Client() *s3.Client {
-	return b.cli
+	cli, ok := b.cli.(*s3.Client)
+	if !ok {
+		panic("not an s3 client object")
+	}
+
+	return cli
 }
 
 // Name returns the specified bucket's name
 func (b *Bucket) Name() string {
 	return b.name
+}
+
+// ReadFrom reads the bytes from the given reader into the object
+// and closes the reader if it implements io.Closer
+func (b *Bucket) ReadFrom(ctx context.Context, key string, rd io.Reader, opts ...ObjectWriterOption) (int64, error) {
+	cl, clOk := rd.(io.Closer)
+	if clOk {
+		defer cl.Close()
+	}
+
+	wr := b.NewWriter(ctx, key, opts...)
+	defer wr.Close()
+
+	if wrTo, ok := rd.(io.WriterTo); ok {
+		return wrTo.WriteTo(wr)
+	}
+
+	n, err := io.Copy(wr, rd)
+	if err != nil {
+		return n, err
+	}
+
+	return n, wr.Close()
+}
+
+// WriteTo write all the bytes from the object into the given writer
+// and closes the writer if it implements io.Closer
+func (b *Bucket) WriteTo(ctx context.Context, key string, wr io.Writer, opts ...ObjectReaderOption) (int64, error) {
+	cl, clOk := wr.(io.Closer)
+	if clOk {
+		defer cl.Close()
+	}
+
+	rd := b.NewReader(ctx, key, opts...)
+
+	var n int64
+	var err error
+
+	if rdFr, ok := wr.(io.ReaderFrom); ok {
+		n, err = rdFr.ReadFrom(rd)
+	} else {
+		n, err = io.Copy(wr, rd)
+	}
+
+	if err != nil {
+		return n, err
+	}
+
+	if clOk {
+		err = cl.Close()
+	}
+
+	return n, err
 }
