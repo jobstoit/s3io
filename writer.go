@@ -187,10 +187,15 @@ func (w *ObjectWriter) closeWithErr(ctx context.Context, err error, rd *io.PipeR
 	defer cl.Close()
 
 	if err != nil {
+		uid := ""
+		if uploadID != nil {
+			uid = *uploadID
+		}
+
 		w.logger.DebugContext(
 			ctx,
 			"error uploading",
-			slog.String("upload_id", *uploadID),
+			slog.String("upload_id", uid),
 			slog.Any("error", err),
 		)
 	}
