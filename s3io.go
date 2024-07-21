@@ -35,6 +35,15 @@ type UploadAPIClient interface {
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
 }
 
+type BucketApiClient interface {
+	DownloadAPIClient
+	UploadAPIClient
+	s3.HeadObjectAPIClient
+	s3.ListObjectsV2APIClient
+	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
+}
+
 type concurrencyLock struct {
 	l chan struct{}
 }
