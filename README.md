@@ -14,10 +14,8 @@ if err != nil {
 }
 
 // Note the "WithBucket..." are options specifically for this writer session
-writer, err := bucket.NewWriter(ctx, "path/to/object.txt", s3io.WithWriterRetries(3))
-if err != nil {
-  return err
-}
+writer := bucket.NewWriter(ctx, "path/to/object.txt", s3io.WithWriterRetries(3))
+defer writer.Close() // makes sure your upload won't keep hanging
 
 if _, err := io.WriteString(writer, "Hello world!"); err != nil {
   return err
@@ -27,10 +25,7 @@ if err := writer.Close(); err != nil {
   return err 
 }
 
-reader, err := bucket.NewReader(ctx, "path/to/object.txt")
-if err != nil {
-  return err
-}
+reader := bucket.NewReader(ctx, "path/to/object.txt")
 
 _, err := io.Copy(os.Stdout, reader)
 

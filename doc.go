@@ -7,20 +7,15 @@
 //
 // There is an ObjectReader to preform read opperations on an s3 object.
 //
-//	rd, err := bucket.NewReader(ctx, "path/to/object.txt", s3io.WithReaderConcurrency(10))
-//	if err != nil {
-//	  return err
-//	}
+//	rd := bucket.NewReader(ctx, "path/to/object.txt", s3io.WithReaderConcurrency(10))
 //
 //	_, err := io.Copy(os.Stdout, rd)
 //
 // And there is an ObjectWriter to preform write opperations on an s3 object.
 // Note The writer MUST close to safe the object.
 //
-//	wr, err := bucket.NewWriter(ctx, "path/to/object.txt")
-//	if err != nil
-//	  return err
-//	}
+//	wr := bucket.NewWriter(ctx, "path/to/object.txt")
+//	defer wr.Close()
 //
 //	_, err := io.WriteString(wr, "Hello world!")
 //	if err != nil {
