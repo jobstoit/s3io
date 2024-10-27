@@ -64,7 +64,11 @@ func TestReadFrom(t *testing.T) {
 		uploadClient: s,
 	}
 
-	bucket := s3io.NewRawBucket("testing", s3io.DefaultChunkSize, s3io.DefaultChunkSize, 1, noopLogger, cli)
+	bucket := s3io.NewRawBucket(
+		"testing",
+		s3io.DefaultChunkSize,
+		s3io.DefaultChunkSize,
+		1, noopLogger, cli)
 
 	var amount int64 = 1024 * 1024 * 12
 
@@ -181,6 +185,10 @@ func (b *BucketLoggingClient) ListObjectsV2(
 	}
 
 	return out, nil
+}
+
+func (b *BucketLoggingClient) DeleteBucket(_ context.Context, _ *s3.DeleteBucketInput, optFns ...func(*s3.Options)) (*s3.DeleteBucketOutput, error) {
+	panic("not implemented")
 }
 
 func (b *BucketLoggingClient) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {

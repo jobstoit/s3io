@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
@@ -213,6 +214,15 @@ func (b *Bucket) Exists(ctx context.Context, key string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// DeleteBucket deletes the whole bucket
+func (b *Bucket) DeleteBucket(ctx context.Context) error {
+	_, err := b.cli.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(b.name),
+	})
+
+	return err
 }
 
 // Delete deletes the given object keys
