@@ -1,7 +1,6 @@
 package s3io_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -60,9 +59,10 @@ func TestBucketFS(t *testing.T) {
 			t.Fatalf("unable to initialize template engine: %v", err)
 		}
 
-		buff := &bytes.Buffer{}
+		hash := sha256.New()
+
 		err = engine.ExecuteTemplate(
-			buff,
+			hash,
 			"index.html.tmpl",
 			map[string]string{"Message": "hello world"},
 		)
@@ -70,7 +70,10 @@ func TestBucketFS(t *testing.T) {
 			t.Errorf("unable to execute template: %v", err)
 		}
 
-		if buff.String() != "<p>hello world</p>" {
+		expectedHash := sha256.New()
+		_, _ = io.WriteString(expectedHash, "<p>hello world</p>")
+
+		if a, e := fmt.Sprintf("%x", hash.Sum(nil)), fmt.Sprintf("%x", expectedHash.Sum(nil)); e != a {
 			t.Errorf("error unexpected message")
 		}
 	})
@@ -134,7 +137,6 @@ func BenchmarkAgainstManager(b *testing.B) {
 	b.Run("fs download", func(b *testing.B) {
 		rd := bucket.NewReader(ctx, fileName, s3io.WithReaderLogger(noopLogger))
 
-		// buf := bytes.NewBuffer(make([]byte, fileSize))
 		buf := io.Discard
 		_, err = io.Copy(buf, rd)
 		if err != nil {
@@ -145,7 +147,6 @@ func BenchmarkAgainstManager(b *testing.B) {
 	b.Run("manager download", func(b *testing.B) {
 		downloader := manager.NewDownloader(bucket.Client())
 
-		// buf := discardWriterAt{}
 		buf := manager.NewWriteAtBuffer(make([]byte, fileSize))
 		_, err := downloader.Download(context.Background(), buf, &s3.GetObjectInput{
 			Bucket: &bucketName,
