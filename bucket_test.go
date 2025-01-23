@@ -18,6 +18,10 @@ import (
 	"github.com/jobstoit/s3io/v2"
 )
 
+func TestBucketInterface(t *testing.T) {
+	var _ s3io.BucketAPI = (*s3io.Bucket)(nil)
+}
+
 func TestOpenUrl(t *testing.T) {
 	ctx := context.Background()
 
