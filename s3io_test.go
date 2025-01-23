@@ -282,6 +282,10 @@ func getTestBucket() (*s3io.Bucket, error) {
 		s3io.WithBucketRetries(3),
 		s3io.WithBucketCreateIfNotExists(),
 		s3io.WithBucketLogger(logger),
+		s3io.WithBucketS3Options(func(opt *s3.Options) {
+			opt.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			opt.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+		}),
 	)
 
 	return bucket, err
