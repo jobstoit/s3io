@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -141,8 +142,26 @@ func TestWriteTo(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+	cli := &BucketLoggingClient{}
+
+	bucket := s3io.NewRawBucket("testing", s3io.DefaultChunkSize, s3io.DefaultChunkSize, 1, noopLogger, cli)
+
+	itemsToDelete := []string{"test1.txt", "test2.txt", "test3.txt"}
+
+	err := bucket.Delete(context.Background(), itemsToDelete...)
+	if err != nil {
+		t.Errorf("unable to delete items: %s", err.Error())
+	}
+
+	if e, a := len(itemsToDelete), len(cli.Invocations); e != a {
+		t.Errorf("expected %d but got %d", e, a)
+	}
+}
+
 // BucketLoggingClient is a test client
 type BucketLoggingClient struct {
+	mx                    sync.Mutex
 	Invocations           []string
 	paths                 []string
 	uploadClient          *UploadLoggingClient
@@ -200,7 +219,12 @@ func (b *BucketLoggingClient) DeleteObjects(_ context.Context, input *s3.DeleteO
 }
 
 func (b *BucketLoggingClient) DeleteObject(_ context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
-	panic("not implemented")
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
+	b.Invocations = append(b.Invocations, "DeleteObject")
+
+	return &s3.DeleteObjectOutput{}, nil
 }
 
 func (b *BucketLoggingClient) GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {

@@ -298,36 +298,31 @@ func (b *Bucket) Delete(ctx context.Context, keys ...string) error {
 		return nil
 	}
 
-	if length == 1 {
-		_, err = b.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: &b.name,
-			Key:    &keys[0],
-		})
-
-		return err
+	count := 0
+	errCh := make(chan error, b.concurrency)
+	for _, key := range keys {
+		go b.deleteAsync(ctx, errCh, key)
 	}
 
-	if length > deleteLimit {
-		err = errors.Join(err, b.Delete(ctx, keys[deleteLimit:]...))
+	for res := range errCh {
+		err = errors.Join(err, res)
 
-		length = deleteLimit
-	}
-
-	objs := make([]types.ObjectIdentifier, length)
-	for i, key := range keys {
-		objs[i] = types.ObjectIdentifier{
-			Key: &key,
+		count++
+		if count == length {
+			break
 		}
 	}
 
-	_, derr := b.cli.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	return err
+}
+
+func (b *Bucket) deleteAsync(ctx context.Context, errCh chan error, key string) {
+	_, err := b.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: &b.name,
-		Delete: &types.Delete{
-			Objects: objs,
-		},
+		Key:    &key,
 	})
 
-	return errors.Join(err, derr)
+	errCh <- err
 }
 
 // List returns a list of objects details.
