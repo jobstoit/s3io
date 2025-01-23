@@ -31,6 +31,70 @@ func (b BucketURIError) Error() string {
 	return fmt.Sprintf("invalid bucket uri: '%s'", string(b))
 }
 
+type BucketAPI interface {
+	fs.GlobFS
+	ExistsBucketAPI
+	DeleteBucketBucketAPI
+	DeleteBucketAPI
+	ListBucketAPI
+	NewReaderBucketAPI
+	ReadAllBucketAPI
+	NewWriterBucketAPI
+	WriteAllBucketAPI
+	ClientBucketAPI
+	NameBucketAPI
+	ReadFromBucketAPI
+	WriteToBucketAPI
+}
+
+type ExistsBucketAPI interface {
+	Exists(ctx context.Context, key string) (bool, error)
+}
+
+type DeleteBucketBucketAPI interface {
+	DeleteBucket(ctx context.Context) error
+}
+
+type DeleteBucketAPI interface {
+	Delete(ctx context.Context, keys ...string) error
+}
+
+type ListBucketAPI interface {
+	List(ctx context.Context, prefix string) ([]types.Object, error)
+}
+
+type NewReaderBucketAPI interface {
+	NewReader(ctx context.Context, key string, opts ...ObjectReaderOption) io.Reader
+}
+
+type ReadAllBucketAPI interface {
+	ReadAll(ctx context.Context, key string, opts ...ObjectReaderOption) ([]byte, error)
+}
+
+type NewWriterBucketAPI interface {
+	NewWriter(ctx context.Context, key string, opts ...ObjectWriterOption) io.WriteCloser
+}
+
+type WriteAllBucketAPI interface {
+	WriteAll(ctx context.Context, key string, p []byte, opts ...ObjectWriterOption) (int, error)
+}
+
+type ClientBucketAPI interface {
+	Client() *s3.Client
+}
+
+type NameBucketAPI interface {
+	Name() string
+}
+
+type ReadFromBucketAPI interface {
+	ReadFrom(ctx context.Context, key string, rd io.Reader, opts ...ObjectWriterOption) (int64, error)
+}
+
+type WriteToBucketAPI interface {
+	WriteTo(ctx context.Context, key string, wr io.Writer, opts ...ObjectReaderOption) (int64, error)
+}
+
 // Bucket is an abstraction to interact with objects in your S3 bucket
 type Bucket struct {
 	name           string
