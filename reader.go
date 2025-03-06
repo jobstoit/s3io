@@ -48,7 +48,7 @@ func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObj
 		retries:     defaultRetries,
 		chunkSize:   DefaultChunkSize,
 		concurrency: defaultConcurrency,
-		logger:      noopLogger,
+		logger:      slog.New(slog.DiscardHandler),
 		closed:      &atomic.Bool{},
 	}
 

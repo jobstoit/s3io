@@ -19,7 +19,7 @@ import (
 func TestWriteAllFromBody(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	i, err := s3io.WriteAllFromBody(context.Background(), s, &s3.PutObjectInput{
+	i, err := s3io.WriteAllFromBody(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 		Body:   bytes.NewReader(buf12MB),
@@ -53,7 +53,7 @@ func TestWriteAllFromBody(t *testing.T) {
 func TestWriteAllBytes(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	i, err := s3io.WriteAllBytes(context.Background(), s, &s3.PutObjectInput{
+	i, err := s3io.WriteAllBytes(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	},
@@ -87,7 +87,7 @@ func TestWriteAllBytes(t *testing.T) {
 func TestObjectWriterSingePartUpload(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	wr := s3io.NewObjectWriter(context.Background(), s, &s3.PutObjectInput{
+	wr := s3io.NewObjectWriter(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	},
@@ -117,7 +117,7 @@ func TestObjectWriterSingePartUpload(t *testing.T) {
 func TestObjectWriterMultipartUpload(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	wr := s3io.NewObjectWriter(context.Background(), s, &s3.PutObjectInput{
+	wr := s3io.NewObjectWriter(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	},

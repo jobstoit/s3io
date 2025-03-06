@@ -24,7 +24,7 @@ func TestBucketInterface(t *testing.T) {
 }
 
 func TestOpenUrl(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := s3io.OpenURL(ctx, "http://eliot@example.com/test")
 	if !errors.Is(err, s3io.ErrInvalidScheme) {
@@ -62,7 +62,7 @@ func TestOpenUrl(t *testing.T) {
 }
 
 func TestReadFrom(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s, ops, args := NewUploadLoggingClient(nil)
 
 	cli := &BucketLoggingClient{
@@ -108,7 +108,7 @@ func TestReadFrom(t *testing.T) {
 }
 
 func TestWriteTo(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dlcli, invocations, ranges := newDownloadRangeClient(buf12MB)
 
 	cli := &BucketLoggingClient{
@@ -149,7 +149,7 @@ func TestDelete(t *testing.T) {
 
 	itemsToDelete := []string{"test1.txt", "test2.txt", "test3.txt"}
 
-	err := bucket.Delete(context.Background(), itemsToDelete...)
+	err := bucket.Delete(t.Context(), itemsToDelete...)
 	if err != nil {
 		t.Errorf("unable to delete items: %s", err.Error())
 	}
