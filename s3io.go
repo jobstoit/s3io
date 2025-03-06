@@ -2,8 +2,6 @@ package s3io
 
 import (
 	"context"
-	"io"
-	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -17,8 +15,6 @@ const (
 	defaultRetries     = 5
 	defaultConcurrency = 5
 )
-
-var noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // DownloadAPIClient is an S3 API client that can invoke the GetObject operation.
 type DownloadAPIClient interface {

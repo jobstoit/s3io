@@ -31,7 +31,7 @@ var (
 func TestBucketFS(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	bucket, err := getTestBucket()
 	if err != nil {
@@ -95,7 +95,7 @@ func TestReadWrite(t *testing.T) {
 }
 
 func BenchmarkAgainstManager(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 
 	bucket, err := getTestBucket()
 	if err != nil {
@@ -124,7 +124,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 	b.Run("manager upload", func(b *testing.B) {
 		uploader := manager.NewUploader(bucket.Client())
 
-		_, err := uploader.Upload(context.Background(), &s3.PutObjectInput{
+		_, err := uploader.Upload(b.Context(), &s3.PutObjectInput{
 			Bucket: &bucketName,
 			Key:    aws.String(fileName),
 			Body:   io.LimitReader(rand.Reader, fileSize),
@@ -148,7 +148,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 		downloader := manager.NewDownloader(bucket.Client())
 
 		buf := manager.NewWriteAtBuffer(make([]byte, fileSize))
-		_, err := downloader.Download(context.Background(), buf, &s3.GetObjectInput{
+		_, err := downloader.Download(b.Context(), buf, &s3.GetObjectInput{
 			Bucket: &bucketName,
 			Key:    aws.String(fileName),
 		})
@@ -166,7 +166,7 @@ func TestLocalReadWrite(t *testing.T) {
 		t.Skip()
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	bucket, err := getTestBucket()
 	if err != nil {
@@ -215,7 +215,7 @@ func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src 
 	t.Run(testName, func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		writeHash := sha256.New()
 		success := t.Run("writing file", func(t *testing.T) {

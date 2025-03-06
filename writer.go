@@ -69,7 +69,7 @@ func NewObjectWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjec
 		input:       input,
 		chunkSize:   DefaultChunkSize,
 		concurrency: defaultConcurrency,
-		logger:      noopLogger,
+		logger:      slog.New(slog.DiscardHandler),
 
 		closingErr: make(chan error, 1),
 	}
@@ -355,7 +355,7 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
 func WithWriterLogger(logger *slog.Logger) ObjectWriterOption {
 	return func(w *ObjectWriter) {
 		if logger == nil {
-			logger = noopLogger
+			logger = slog.New(slog.DiscardHandler)
 		}
 
 		w.logger = logger

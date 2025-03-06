@@ -35,7 +35,7 @@ func newBucketBuilder() *bucketBuilder {
 		concurrency:    defaultConcurrency,
 		readChunkSize:  DefaultChunkSize,
 		writeChunkSize: DefaultChunkSize,
-		logger:         noopLogger,
+		logger:         slog.New(slog.DiscardHandler),
 	}
 }
 
@@ -221,7 +221,7 @@ func WithBucketRetries(i int) BucketOption {
 func WithBucketLogger(logger *slog.Logger) BucketOption {
 	return func(b *bucketBuilder) {
 		if logger == nil {
-			logger = noopLogger
+			logger = slog.New(slog.DiscardHandler)
 		}
 
 		b.logger = logger

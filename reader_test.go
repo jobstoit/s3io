@@ -32,7 +32,7 @@ func TestImplementIOReader(t *testing.T) {
 func TestReadAll(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)
 
-	n, err := s3io.ReadAll(context.Background(), c, &s3.GetObjectInput{
+	n, err := s3io.ReadAll(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	}, s3io.WithReaderConcurrency(1))
@@ -57,7 +57,7 @@ func TestReadAll(t *testing.T) {
 func TestObjectReaderSinglePart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf2MB)
 
-	rd := s3io.NewObjectReader(context.Background(), c, &s3.GetObjectInput{
+	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	}, s3io.WithReaderConcurrency(1))
@@ -84,7 +84,7 @@ func TestObjectReaderSinglePart(t *testing.T) {
 func TestObjectReaderMultiPart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)
 
-	rd := s3io.NewObjectReader(context.Background(), c, &s3.GetObjectInput{
+	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	})
