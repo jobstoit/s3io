@@ -14,50 +14,25 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jobstoit/s3io/v2"
+	"github.com/jobstoit/s3io/v3"
 )
 
 func TestImplementFSFile(t *testing.T) {
 	t.Parallel()
 
-	var _ fs.File = &s3io.ObjectReader{}
+	var _ fs.File = &s3io.Reader{}
 }
 
 func TestImplementIOReader(t *testing.T) {
 	t.Parallel()
 
-	var _ io.Reader = &s3io.ObjectReader{}
+	var _ io.Reader = &s3io.Reader{}
 }
 
-func TestReadAll(t *testing.T) {
-	c, invocations, ranges := newDownloadRangeClient(buf12MB)
-
-	n, err := s3io.ReadAll(t.Context(), c, &s3.GetObjectInput{
-		Bucket: aws.String("bucket"),
-		Key:    aws.String("key"),
-	}, s3io.WithReaderConcurrency(1))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if e, a := len(buf12MB), len(n); e != a {
-		t.Errorf("expected %d buffer length, got %d", e, a)
-	}
-
-	if e, a := 4, *invocations; e != a {
-		t.Errorf("expect %v API calls, got %v", e, a)
-	}
-
-	expectRngs := []string{"bytes=0-0", "bytes=0-5242880", "bytes=5242881-10485761", "bytes=10485762-12582912"}
-	if e, a := expectRngs, *ranges; !reflect.DeepEqual(e, a) {
-		t.Errorf("expect %v ranges, got %v", e, a)
-	}
-}
-
-func TestObjectReaderSinglePart(t *testing.T) {
+func TestReaderSinglePart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf2MB)
 
-	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
+	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	}, s3io.WithReaderConcurrency(1))
@@ -81,10 +56,10 @@ func TestObjectReaderSinglePart(t *testing.T) {
 	}
 }
 
-func TestObjectReaderMultiPart(t *testing.T) {
+func TestReaderMultiPart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)
 
-	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
+	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	})

@@ -18,15 +18,22 @@ import (
 	"github.com/aws/smithy-go"
 )
 
-// ReadAll reads all the bytes for a given object
-func ReadAll(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) ([]byte, error) {
-	rd := NewObjectReader(ctx, s3, input, opts...)
-
-	return io.ReadAll(rd)
-}
-
-// ObjectReader is an io.Reader implementation for an S3 Object
-type ObjectReader struct {
+// Reader is an io.Reader implementation for an S3 Object.
+//
+// You can open a new reader on it's own using the *s3.Client:
+//
+//	client := s3.NewFromConfig(cfg)
+//	rd := s3io.NewReader(ctx, client, s3io.WithReaderConcurrency(3))
+//
+// Or you can open it using the BucketAPI:
+//
+//	bucket, err := s3io.Open(ctx, "my-bucket-name", s3io.WithBucketCredentials("access-key", "access-secret"))
+//	if err != nil {
+//	  log.Fatalf("unable to open bucket: %w", err)
+//	}
+//
+//	rd := bucket.Get(ctx, "path/to/object.txt")
+type Reader struct {
 	ctx           context.Context
 	s3            DownloadAPIClient
 	rd            *io.PipeReader
@@ -39,9 +46,9 @@ type ObjectReader struct {
 	closed        *atomic.Bool
 }
 
-// NewObjectReader returns a new ObjectReader to do io.Reader opperations on your s3 object
-func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ObjectReaderOption) io.Reader {
-	rd := &ObjectReader{
+// NewReader returns a new ObjectReader to do io.Reader opperations on your s3 object
+func NewReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObjectInput, opts ...ReaderOption) io.Reader {
+	rd := &Reader{
 		ctx:         ctx,
 		s3:          s3,
 		input:       input,
@@ -57,12 +64,12 @@ func NewObjectReader(ctx context.Context, s3 DownloadAPIClient, input *s3.GetObj
 	return rd
 }
 
-// ObjectReaderOption is an option for the given read operation.
-type ObjectReaderOption func(*ObjectReader)
+// ReaderOption is an option for the given read operation.
+type ReaderOption func(*Reader)
 
 // ObjectReaderOptions is a collection of ObjectReaderOption's.
-func ObjectReaderOptions(opts ...ObjectReaderOption) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func ObjectReaderOptions(opts ...ReaderOption) ReaderOption {
+	return func(r *Reader) {
 		for _, op := range opts {
 			op(r)
 		}
@@ -70,7 +77,7 @@ func ObjectReaderOptions(opts ...ObjectReaderOption) ObjectReaderOption {
 }
 
 // Stat is the fs.File implementaion for the ObjectReader.
-func (r *ObjectReader) Stat() (fs.FileInfo, error) {
+func (r *Reader) Stat() (fs.FileInfo, error) {
 	if r.closed.Load() {
 		return nil, fs.ErrClosed
 	}
@@ -134,7 +141,7 @@ func (r *ObjectReader) Stat() (fs.FileInfo, error) {
 }
 
 // close is the io.Close implementation for the ObjectReader
-func (r *ObjectReader) Close() error {
+func (r *Reader) Close() error {
 	if r.closed.CompareAndSwap(false, true) && r.rd != nil {
 		r.rd.CloseWithError(io.EOF)
 	}
@@ -146,7 +153,7 @@ func (r *ObjectReader) Close() error {
 //
 // It returns an fs.ErrNotExists if the object doesn't exist in the given bucket.
 // And returns an io.EOF when all bytes are read.
-func (r *ObjectReader) Read(p []byte) (int, error) {
+func (r *Reader) Read(p []byte) (int, error) {
 	if r.closed.Load() {
 		return 0, fs.ErrClosed
 	}
@@ -165,7 +172,7 @@ func (r *ObjectReader) Read(p []byte) (int, error) {
 	return c, err
 }
 
-func (r *ObjectReader) preRead() error {
+func (r *Reader) preRead() error {
 	ctx := r.ctx
 	rd, wr := io.Pipe()
 
@@ -196,7 +203,7 @@ func (r *ObjectReader) preRead() error {
 	return nil
 }
 
-func (r *ObjectReader) getChunk(
+func (r *Reader) getChunk(
 	ctx context.Context,
 	wr *io.PipeWriter,
 	cl *concurrencyLock,
@@ -250,7 +257,7 @@ func (r *ObjectReader) getChunk(
 	}
 }
 
-func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.GetObjectOutput, error) {
+func (r *Reader) getObject(ctx context.Context, start, end int64) (*s3.GetObjectOutput, error) {
 	r.logger.DebugContext(ctx, "getting chunk", slog.Group("chunk", slog.Int64("start", start), slog.Int64("end", end)))
 
 	byteRange := fmt.Sprintf("bytes=%d-%d", start, end)
@@ -275,8 +282,8 @@ func (r *ObjectReader) getObject(ctx context.Context, start, end int64) (*s3.Get
  */
 
 // WithReaderLogger sets the logger for this reader
-func WithReaderLogger(logger *slog.Logger) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func WithReaderLogger(logger *slog.Logger) ReaderOption {
+	return func(r *Reader) {
 		if logger != nil {
 			r.logger = logger
 		}
@@ -284,15 +291,15 @@ func WithReaderLogger(logger *slog.Logger) ObjectReaderOption {
 }
 
 // WithReaderChunkSize sets the chunksize for this reader
-func WithReaderChunkSize(size int64) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func WithReaderChunkSize(size int64) ReaderOption {
+	return func(r *Reader) {
 		r.chunkSize = size
 	}
 }
 
 // WithReaderConcurrency set the concurency amount for this reader
-func WithReaderConcurrency(i int) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func WithReaderConcurrency(i int) ReaderOption {
+	return func(r *Reader) {
 		if i < 1 {
 			i = 1
 		}
@@ -302,8 +309,8 @@ func WithReaderConcurrency(i int) ObjectReaderOption {
 }
 
 // WithReaderRetries sets the retry count for this reader
-func WithReaderRetries(i int) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func WithReaderRetries(i int) ReaderOption {
+	return func(r *Reader) {
 		if i < 1 {
 			i = 1
 		}
@@ -313,8 +320,8 @@ func WithReaderRetries(i int) ObjectReaderOption {
 }
 
 // WithReaderS3Options adds s3 options to the reader opperations
-func WithReaderS3Options(opts ...func(*s3.Options)) ObjectReaderOption {
-	return func(r *ObjectReader) {
+func WithReaderS3Options(opts ...func(*s3.Options)) ReaderOption {
+	return func(r *Reader) {
 		r.clientOptions = append(r.clientOptions, opts...)
 	}
 }
@@ -324,7 +331,7 @@ type fileInfo struct {
 	name        string
 	size        int64
 	lastUpdated time.Time
-	rd          *ObjectReader
+	rd          *Reader
 }
 
 func (f fileInfo) Name() string {

@@ -5,9 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"html/template"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path"
@@ -15,69 +13,19 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jobstoit/s3io/v2"
+	"github.com/jobstoit/s3io/v3"
 )
 
 var (
-	buf12MB    = make([]byte, 1024*1024*12)
-	buf2MB     = make([]byte, 1024*1024*2)
-	noopLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf12MB = make([]byte, 1024*1024*12)
+	buf2MB  = make([]byte, 1024*1024*2)
 
 	createBucketMux = &sync.Mutex{}
 )
-
-func TestBucketFS(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-
-	bucket, err := getTestBucket()
-	if err != nil {
-		t.Fatalf("unable to get test bucket: %v", err)
-	}
-
-	t.Run("bucket implements glob and fs", func(t *testing.T) {
-		var _ fs.GlobFS = bucket
-	})
-
-	t.Run("get fs template", func(t *testing.T) {
-		const templ = "templates/index.html.tmpl"
-
-		wr := bucket.NewWriter(ctx, templ)
-		if _, err := wr.Write([]byte("<p>{{.Message}}</p>")); err != nil {
-			t.Fatalf("unable to write template: %v", err)
-		}
-
-		if err := wr.Close(); err != nil {
-			t.Fatalf("unable to store template: %v", err)
-		}
-
-		engine, err := template.ParseFS(bucket, "templates/*.html.tmpl")
-		if err != nil {
-			t.Fatalf("unable to initialize template engine: %v", err)
-		}
-
-		hash := sha256.New()
-
-		err = engine.ExecuteTemplate(
-			hash,
-			"index.html.tmpl",
-			map[string]string{"Message": "hello world"},
-		)
-		if err != nil {
-			t.Errorf("unable to execute template: %v", err)
-		}
-
-		expectedHash := sha256.New()
-		_, _ = io.WriteString(expectedHash, "<p>hello world</p>")
-
-		if a, e := fmt.Sprintf("%x", hash.Sum(nil)), fmt.Sprintf("%x", expectedHash.Sum(nil)); e != a {
-			t.Errorf("error unexpected message")
-		}
-	})
-}
 
 func TestReadWrite(t *testing.T) {
 	t.Parallel()
@@ -97,18 +45,22 @@ func TestReadWrite(t *testing.T) {
 func BenchmarkAgainstManager(b *testing.B) {
 	ctx := b.Context()
 
+	s3Cli, err := getTestManager()
+	if err != nil {
+		b.Fatalf("error getting test manager")
+	}
+
 	bucket, err := getTestBucket()
 	if err != nil {
 		b.Fatalf("error getting test bucket: %v", err)
-		return
 	}
 
 	fileName := "benchmark.txt"
-	bucketName := bucket.Name()
+	bucketName := bucket.String()
 	var fileSize int64 = 1024 * 1024 * 120 // 120Mb
 
 	b.Run("fs upload", func(b *testing.B) {
-		wr := bucket.NewWriter(ctx, fileName, s3io.WithWriterLogger(noopLogger))
+		wr := bucket.Put(ctx, fileName, s3io.WithWriterLogger(slog.New(slog.DiscardHandler)))
 		defer wr.Close()
 
 		_, err = io.Copy(wr, io.LimitReader(rand.Reader, fileSize))
@@ -122,7 +74,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("manager upload", func(b *testing.B) {
-		uploader := manager.NewUploader(bucket.Client())
+		uploader := manager.NewUploader(s3Cli)
 
 		_, err := uploader.Upload(b.Context(), &s3.PutObjectInput{
 			Bucket: &bucketName,
@@ -135,7 +87,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("fs download", func(b *testing.B) {
-		rd := bucket.NewReader(ctx, fileName, s3io.WithReaderLogger(noopLogger))
+		rd := bucket.Get(ctx, fileName, s3io.WithReaderLogger(slog.New(slog.DiscardHandler)))
 
 		buf := io.Discard
 		_, err = io.Copy(buf, rd)
@@ -145,7 +97,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("manager download", func(b *testing.B) {
-		downloader := manager.NewDownloader(bucket.Client())
+		downloader := manager.NewDownloader(s3Cli)
 
 		buf := manager.NewWriteAtBuffer(make([]byte, fileSize))
 		_, err := downloader.Download(b.Context(), buf, &s3.GetObjectInput{
@@ -184,7 +136,7 @@ func TestLocalReadWrite(t *testing.T) {
 	fileName := path.Base(localFile)
 	dest := path.Join("data", fileName)
 
-	wr := bucket.NewWriter(ctx, dest)
+	wr := bucket.Put(ctx, dest)
 
 	if _, err := io.Copy(wr, srcFile); err != nil {
 		t.Fatalf("error writing: %v", err)
@@ -199,7 +151,7 @@ func TestLocalReadWrite(t *testing.T) {
 		return
 	}
 
-	rd := bucket.NewReader(ctx, dest)
+	rd := bucket.Get(ctx, dest)
 
 	destFile, err := os.OpenFile(localDest, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0777)
 	if err != nil {
@@ -211,7 +163,7 @@ func TestLocalReadWrite(t *testing.T) {
 	}
 }
 
-func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src io.Reader) {
+func testFile(t *testing.T, bucket s3io.Bucket, testName, filename string, src io.Reader) {
 	t.Run(testName, func(t *testing.T) {
 		t.Parallel()
 
@@ -219,7 +171,7 @@ func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src 
 
 		writeHash := sha256.New()
 		success := t.Run("writing file", func(t *testing.T) {
-			wr := bucket.NewWriter(ctx, filename)
+			wr := bucket.Put(ctx, filename)
 
 			_, err := io.Copy(wr, io.TeeReader(src, writeHash))
 			if err != nil {
@@ -237,7 +189,7 @@ func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src 
 
 		readHash := sha256.New()
 		success = t.Run("reading file", func(t *testing.T) {
-			rd := bucket.NewReader(ctx, filename)
+			rd := bucket.Get(ctx, filename)
 
 			_, err := io.Copy(readHash, rd)
 			if err != nil && err != io.EOF {
@@ -257,14 +209,14 @@ func testFile(t *testing.T, bucket *s3io.Bucket, testName, filename string, src 
 	})
 }
 
-func getTestBucket() (*s3io.Bucket, error) {
+func getTestBucket() (s3io.Bucket, error) {
 	region := envOrDefault("AWS_REGION", "local")
 	bucketName := envOrDefault("AWS_BUCKET_NAME", "jobbitz-testing")
 	accessKey := envOrDefault("AWS_ACCESS_KEY_ID", "access_key")
 	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
 	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 
-	logger := noopLogger
+	logger := slog.New(slog.DiscardHandler)
 	if withDebug := os.Getenv("DEBUG_LOG"); withDebug != "" {
 		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: true,
@@ -275,7 +227,7 @@ func getTestBucket() (*s3io.Bucket, error) {
 	createBucketMux.Lock()
 	defer createBucketMux.Unlock()
 
-	bucket, err := s3io.OpenBucket(context.Background(),
+	bucket, err := s3io.Open(context.Background(),
 		bucketName,
 		s3io.WithBucketHost(endpoint, region, true),
 		s3io.WithBucketCredentials(accessKey, secretKey),
@@ -289,6 +241,28 @@ func getTestBucket() (*s3io.Bucket, error) {
 	)
 
 	return bucket, err
+}
+
+func getTestManager() (*s3.Client, error) {
+	region := envOrDefault("AWS_REGION", "local")
+	accessKey := envOrDefault("AWS_ACCESS_KEY_ID", "access_key")
+	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
+	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
+
+	cfg, err := config.LoadDefaultConfig(context.Background(), func(cfg *config.LoadOptions) error {
+		cfg.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
+		cfg.BaseEndpoint = endpoint
+		cfg.Region = region
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cli := s3.NewFromConfig(cfg)
+
+	return cli, nil
 }
 
 func envOrDefault(varname, defaultVal string) string {

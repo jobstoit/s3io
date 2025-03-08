@@ -50,7 +50,7 @@ func BucketOptions(opts ...BucketOption) BucketOption {
 	}
 }
 
-func (b *bucketBuilder) Build(ctx context.Context, name string) (*Bucket, error) {
+func (b *bucketBuilder) Build(ctx context.Context, name string) (Bucket, error) {
 	cli := b.cli
 	if cli == nil {
 		cfg, err := config.LoadDefaultConfig(ctx, b.cliOpts...)
@@ -89,7 +89,7 @@ func (b *bucketBuilder) Build(ctx context.Context, name string) (*Bucket, error)
 		}
 	}
 
-	return &Bucket{
+	return &bucket{
 		name:           name,
 		cli:            cli,
 		readChunkSize:  b.readChunkSize,
@@ -147,12 +147,11 @@ func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
 	return func(b *bucketBuilder) {
 		b.cliOpts = append(b.cliOpts,
 			config.WithRegion(region),
-			config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, opt ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: url, SigningRegion: region}, nil
-			})),
 		)
 
 		b.s3Opts = append(b.s3Opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(url)
+			o.Region = region
 			o.UsePathStyle = true
 		})
 	}
