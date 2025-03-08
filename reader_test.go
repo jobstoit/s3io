@@ -14,19 +14,19 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jobstoit/s3io/v2"
+	"github.com/jobstoit/s3io/v3"
 )
 
 func TestImplementFSFile(t *testing.T) {
 	t.Parallel()
 
-	var _ fs.File = &s3io.ObjectReader{}
+	var _ fs.File = &s3io.Reader{}
 }
 
 func TestImplementIOReader(t *testing.T) {
 	t.Parallel()
 
-	var _ io.Reader = &s3io.ObjectReader{}
+	var _ io.Reader = &s3io.Reader{}
 }
 
 func TestReadAll(t *testing.T) {
@@ -57,7 +57,7 @@ func TestReadAll(t *testing.T) {
 func TestObjectReaderSinglePart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf2MB)
 
-	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
+	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	}, s3io.WithReaderConcurrency(1))
@@ -84,7 +84,7 @@ func TestObjectReaderSinglePart(t *testing.T) {
 func TestObjectReaderMultiPart(t *testing.T) {
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)
 
-	rd := s3io.NewObjectReader(t.Context(), c, &s3.GetObjectInput{
+	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	})

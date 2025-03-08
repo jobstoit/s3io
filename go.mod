@@ -1,4 +1,4 @@
-module github.com/jobstoit/s3io/v2
+module github.com/jobstoit/s3io/v3
 
 go 1.24
 
