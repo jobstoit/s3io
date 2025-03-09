@@ -1,93 +1,25 @@
 package s3io_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/jobstoit/s3io/v2"
+	"github.com/jobstoit/s3io/v3"
 )
 
-func TestWriteAllFromBody(t *testing.T) {
+func TestWriterSingePartUpload(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	i, err := s3io.WriteAllFromBody(t.Context(), s, &s3.PutObjectInput{
-		Bucket: aws.String("bucket"),
-		Key:    aws.String("key"),
-		Body:   bytes.NewReader(buf12MB),
-	},
-		s3io.WithWriterChunkSize(1024*1024*7),
-		s3io.WithWriterConcurrency(1),
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	vals := []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload"}
-	if !reflect.DeepEqual(vals, *ops) {
-		t.Errorf("expect %v, got %v", vals, *ops)
-	}
-
-	// Part lengths
-	if e, a := int64(1024*1024*7), getReaderLength((*args)[1].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-
-	if e, a := int64(1024*1024*5), getReaderLength((*args)[2].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-
-	if e, a := int64(len(buf12MB)), i; a != e {
-		t.Errorf("written byte length mismatch. expected: %d, actual: %d", e, a)
-	}
-}
-
-func TestWriteAllBytes(t *testing.T) {
-	s, ops, args := NewUploadLoggingClient(nil)
-
-	i, err := s3io.WriteAllBytes(t.Context(), s, &s3.PutObjectInput{
-		Bucket: aws.String("bucket"),
-		Key:    aws.String("key"),
-	},
-		buf12MB,
-		s3io.WithWriterChunkSize(1024*1024*7),
-		s3io.WithWriterConcurrency(1),
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	vals := []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload"}
-	if !reflect.DeepEqual(vals, *ops) {
-		t.Errorf("expect %v, got %v", vals, *ops)
-	}
-
-	// Part lengths
-	if e, a := int64(1024*1024*7), getReaderLength((*args)[1].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-
-	if e, a := int64(1024*1024*5), getReaderLength((*args)[2].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-
-	if e, a := len(buf12MB), i; a != e {
-		t.Errorf("written byte length mismatch. expected: %d, actual: %d", e, a)
-	}
-}
-
-func TestObjectWriterSingePartUpload(t *testing.T) {
-	s, ops, args := NewUploadLoggingClient(nil)
-
-	wr := s3io.NewObjectWriter(t.Context(), s, &s3.PutObjectInput{
+	wr := s3io.NewWriter(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	},
@@ -114,10 +46,10 @@ func TestObjectWriterSingePartUpload(t *testing.T) {
 	}
 }
 
-func TestObjectWriterMultipartUpload(t *testing.T) {
+func TestWriterMultipartUpload(t *testing.T) {
 	s, ops, args := NewUploadLoggingClient(nil)
 
-	wr := s3io.NewObjectWriter(t.Context(), s, &s3.PutObjectInput{
+	wr := s3io.NewWriter(t.Context(), s, &s3.PutObjectInput{
 		Bucket: aws.String("bucket"),
 		Key:    aws.String("key"),
 	},
@@ -151,7 +83,7 @@ func TestObjectWriterMultipartUpload(t *testing.T) {
 // UploadLoggingClient is a mock client that can be used to record and stub responses for testing the manager.Uploader.
 type UploadLoggingClient struct {
 	Invocations []string
-	Params      []interface{}
+	Params      []any
 
 	ConsumeBody bool
 
@@ -199,8 +131,8 @@ func (f httpDoFunc) Do(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-func (u *UploadLoggingClient) traceOperation(name string, params interface{}) {
-	if contains(u.ignoredOperations, name) {
+func (u *UploadLoggingClient) traceOperation(name string, params any) {
+	if slices.Contains(u.ignoredOperations, name) {
 		return
 	}
 
@@ -313,21 +245,12 @@ func (u *UploadLoggingClient) AbortMultipartUpload(ctx context.Context, params *
 }
 
 // NewUploadLoggingClient returns a new UploadLoggingClient.
-func NewUploadLoggingClient(ignoreOps []string) (*UploadLoggingClient, *[]string, *[]interface{}) {
+func NewUploadLoggingClient(ignoreOps []string) (*UploadLoggingClient, *[]string, *[]any) {
 	client := &UploadLoggingClient{
 		ignoredOperations: ignoreOps,
 	}
 
 	return client, &client.Invocations, &client.Params
-}
-
-func contains(src []string, s string) bool {
-	for _, v := range src {
-		if s == v {
-			return true
-		}
-	}
-	return false
 }
 
 // getReaderLength discards the bytes from reader and returns the length

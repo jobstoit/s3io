@@ -13,39 +13,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// WriteAllFromBody writes to the given object using the input.Body
-func WriteAllFromBody(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...ObjectWriterOption) (int64, error) {
-	rd := input.Body
-	if rd == nil {
-		return 0, io.EOF
-	}
-
-	wr := NewObjectWriter(ctx, s3, input, opts...)
-	defer wr.Close()
-
-	n, err := io.Copy(wr, rd)
-	if err != nil {
-		return n, err
-	}
-
-	return n, wr.Close()
-}
-
-// WriteAllBytes writes the given bytes into hte given object
-func WriteAllBytes(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, p []byte, opts ...ObjectWriterOption) (int, error) {
-	wr := NewObjectWriter(ctx, s3, input, opts...)
-	defer wr.Close()
-
-	n, err := wr.Write(p)
-	if err != nil {
-		return n, err
-	}
-
-	return n, wr.Close()
-}
-
-// ObjectWriter is an io.WriteCloser implementation for an s3 Object
-type ObjectWriter struct {
+// Writer is an io.WriteCloser implementation for an s3 Object.
+//
+// You can open a new writer on its own using the *s3.Client:
+//
+//	client := s3.NewFromConfig(cfg)
+//	wr := s3io.NewWriter(ctx, client, s3io.WithWriterConcurrency(5))
+//
+// Or you can open it usign the BucketAPI:
+//
+//	bucket, err := s3io.Open(ctx, "my-bucket-name", s3io.WithBucketCredentials("access-key", "access-secret"))
+//	if err != nil {
+//	  log.Fatalf("unable to open bucket: %w", err)
+//	}
+//
+//	 wr := bucket.Put(ctx, "path/to/object.txt")
+type Writer struct {
 	ctx           context.Context
 	s3            UploadAPIClient
 	wr            *io.PipeWriter
@@ -61,9 +44,9 @@ type ObjectWriter struct {
 	closingErr chan error
 }
 
-// NewObjectWriter returns a new ObjectWriter to do io.Writer opperations on your s3 object
-func NewObjectWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...ObjectWriterOption) io.WriteCloser {
-	wr := &ObjectWriter{
+// NewWriter returns a new ObjectWriter to do io.Writer opperations on your s3 object
+func NewWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjectInput, opts ...WriterOption) io.WriteCloser {
+	wr := &Writer{
 		ctx:         ctx,
 		s3:          s3,
 		input:       input,
@@ -81,12 +64,12 @@ func NewObjectWriter(ctx context.Context, s3 UploadAPIClient, input *s3.PutObjec
 	return wr
 }
 
-// ObjectWriterOption is an option for the given write operation
-type ObjectWriterOption func(*ObjectWriter)
+// WriterOption is an option for the given write operation
+type WriterOption func(*Writer)
 
 // ObjectWriterOptions is a collection of ObjectWriterOption's
-func ObjectWriterOptions(opts ...ObjectWriterOption) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func ObjectWriterOptions(opts ...WriterOption) WriterOption {
+	return func(w *Writer) {
 		for _, op := range opts {
 			op(w)
 		}
@@ -96,7 +79,7 @@ func ObjectWriterOptions(opts ...ObjectWriterOption) ObjectWriterOption {
 // Write is the io.Writer implementation of the ObjectWriter
 //
 // The object is stored when the Close method is called.
-func (w *ObjectWriter) Write(p []byte) (int, error) {
+func (w *Writer) Write(p []byte) (int, error) {
 	return w.wr.Write(p)
 }
 
@@ -108,7 +91,7 @@ func (w *ObjectWriter) Write(p []byte) (int, error) {
 //
 // If an error occured while uploading parts this error might also be a upload part error joined with
 // a AbortMultipartUpload error.
-func (w *ObjectWriter) Close() error {
+func (w *Writer) Close() error {
 	w.wr.CloseWithError(io.EOF)
 
 	w.logger.DebugContext(w.ctx, "closing writer")
@@ -118,7 +101,7 @@ func (w *ObjectWriter) Close() error {
 	return err
 }
 
-func (w *ObjectWriter) preWrite() {
+func (w *Writer) preWrite() {
 	ctx := w.ctx
 	rd, wr := io.Pipe()
 
@@ -129,7 +112,7 @@ func (w *ObjectWriter) preWrite() {
 	go w.writeChunk(ctx, rd, cl, nil, 1)
 }
 
-func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *concurrencyLock, uploadID *string, partNr int32) {
+func (w *Writer) writeChunk(ctx context.Context, rd *io.PipeReader, cl *concurrencyLock, uploadID *string, partNr int32) {
 	defer w.wg.Done()
 
 	select {
@@ -182,7 +165,7 @@ func (w *ObjectWriter) writeChunk(ctx context.Context, rd *io.PipeReader, cl *co
 	}
 }
 
-func (w *ObjectWriter) closeWithErr(ctx context.Context, err error, rd *io.PipeReader, cl *concurrencyLock, uploadID *string) {
+func (w *Writer) closeWithErr(ctx context.Context, err error, rd *io.PipeReader, cl *concurrencyLock, uploadID *string) {
 	defer close(w.closingErr)
 	defer cl.Close()
 
@@ -208,7 +191,7 @@ func (w *ObjectWriter) closeWithErr(ctx context.Context, err error, rd *io.PipeR
 	w.closingErr <- err
 }
 
-func (w *ObjectWriter) putObject(ctx context.Context, by []byte) error {
+func (w *Writer) putObject(ctx context.Context, by []byte) error {
 	w.logger.DebugContext(ctx, "upload small file", slog.Int("size", len(by)))
 
 	input := w.input
@@ -219,7 +202,7 @@ func (w *ObjectWriter) putObject(ctx context.Context, by []byte) error {
 	return err
 }
 
-func (w *ObjectWriter) createMultipartUpload(ctx context.Context) (*string, error) {
+func (w *Writer) createMultipartUpload(ctx context.Context) (*string, error) {
 	w.logger.DebugContext(ctx, "starting multipart upload")
 
 	input := &s3.CreateMultipartUploadInput{
@@ -263,7 +246,7 @@ func (w *ObjectWriter) createMultipartUpload(ctx context.Context) (*string, erro
 	return res.UploadId, nil
 }
 
-func (w *ObjectWriter) uploadPart(ctx context.Context, uploadID *string, partNr int32, by []byte) (types.CompletedPart, error) {
+func (w *Writer) uploadPart(ctx context.Context, uploadID *string, partNr int32, by []byte) (types.CompletedPart, error) {
 	w.logger.DebugContext(
 		ctx,
 		"upload part",
@@ -295,7 +278,7 @@ func (w *ObjectWriter) uploadPart(ctx context.Context, uploadID *string, partNr 
 	}, nil
 }
 
-func (w *ObjectWriter) abortUpload(ctx context.Context, uploadID *string) error {
+func (w *Writer) abortUpload(ctx context.Context, uploadID *string) error {
 	w.logger.DebugContext(ctx, "abort upload", slog.String("upload_id", *uploadID))
 
 	input := &s3.AbortMultipartUploadInput{
@@ -311,7 +294,7 @@ func (w *ObjectWriter) abortUpload(ctx context.Context, uploadID *string) error 
 	return err
 }
 
-func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
+func (w *Writer) completeUpload(ctx context.Context, uploadID *string) {
 	defer close(w.closingErr)
 
 	w.wg.Wait()
@@ -352,8 +335,8 @@ func (w *ObjectWriter) completeUpload(ctx context.Context, uploadID *string) {
  */
 
 // WithWriterLogger adds a logger for this writer.
-func WithWriterLogger(logger *slog.Logger) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriterLogger(logger *slog.Logger) WriterOption {
+	return func(w *Writer) {
 		if logger == nil {
 			logger = slog.New(slog.DiscardHandler)
 		}
@@ -364,8 +347,8 @@ func WithWriterLogger(logger *slog.Logger) ObjectWriterOption {
 
 // WithWriterChunkSize sets the chunksize for this writer.
 // If set below the minimal chunk size of 5Mb then it will be set to the minimal chunksize.
-func WithWriterChunkSize(size int64) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriterChunkSize(size int64) WriterOption {
+	return func(w *Writer) {
 		if size < MinChunkSize {
 			size = MinChunkSize
 		}
@@ -375,8 +358,8 @@ func WithWriterChunkSize(size int64) ObjectWriterOption {
 }
 
 // WithWriterConcurrency sets the concurrency amount for this writer.
-func WithWriterConcurrency(i int) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriterConcurrency(i int) WriterOption {
+	return func(w *Writer) {
 		if i < 1 {
 			i = 1
 		}
@@ -386,22 +369,22 @@ func WithWriterConcurrency(i int) ObjectWriterOption {
 }
 
 // WithWriterRetries sets the retry count for this writer
-func WithWriteRetries(i int) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriteRetries(i int) WriterOption {
+	return func(w *Writer) {
 		w.clientOptions = append(w.clientOptions, withS3Retries(i))
 	}
 }
 
 // WithWriterClientOptions adds s3 client options to the writer opperations
-func WithWriterClientOptions(opts ...func(*s3.Options)) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriterClientOptions(opts ...func(*s3.Options)) WriterOption {
+	return func(w *Writer) {
 		w.clientOptions = append(w.clientOptions, opts...)
 	}
 }
 
 // Set ACL after giving the input
-func WithWriterACL(acl types.ObjectCannedACL) ObjectWriterOption {
-	return func(w *ObjectWriter) {
+func WithWriterACL(acl types.ObjectCannedACL) WriterOption {
+	return func(w *Writer) {
 		if w.input == nil {
 			return
 		}

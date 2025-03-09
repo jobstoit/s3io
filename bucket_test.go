@@ -1,14 +1,11 @@
 package s3io_test
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
+	"log/slog"
 	"net/url"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -16,12 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/jobstoit/s3io/v2"
+	"github.com/jobstoit/s3io/v3"
 )
-
-func TestBucketInterface(t *testing.T) {
-	var _ s3io.BucketAPI = (*s3io.Bucket)(nil)
-}
 
 func TestOpenUrl(t *testing.T) {
 	ctx := t.Context()
@@ -61,91 +54,10 @@ func TestOpenUrl(t *testing.T) {
 	}
 }
 
-func TestReadFrom(t *testing.T) {
-	ctx := t.Context()
-	s, ops, args := NewUploadLoggingClient(nil)
-
-	cli := &BucketLoggingClient{
-		uploadClient: s,
-	}
-
-	bucket := s3io.NewRawBucket(
-		"testing",
-		s3io.DefaultChunkSize,
-		s3io.DefaultChunkSize,
-		1, noopLogger, cli)
-
-	var amount int64 = 1024 * 1024 * 12
-
-	c, err := bucket.ReadFrom(
-		ctx,
-		"path/to/item",
-		io.LimitReader(rand.Reader, amount),
-		s3io.WithWriterConcurrency(1),
-		s3io.WithWriterChunkSize(1024*1024*7),
-	)
-	if err != nil {
-		t.Fatalf("error reading from: %v", err)
-	}
-
-	if e, a := amount, c; e != a {
-		t.Errorf("expected %d not equal to actual %d", e, a)
-	}
-
-	vals := []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload"}
-	if !reflect.DeepEqual(vals, *ops) {
-		t.Errorf("expect %v, got %v", vals, *ops)
-	}
-
-	// Part lengths
-	if e, a := int64(1024*1024*7), getReaderLength((*args)[1].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-
-	if e, a := int64(1024*1024*5), getReaderLength((*args)[2].(*s3.UploadPartInput).Body); e != a {
-		t.Errorf("expect %d, got %d", e, a)
-	}
-}
-
-func TestWriteTo(t *testing.T) {
-	ctx := t.Context()
-	dlcli, invocations, ranges := newDownloadRangeClient(buf12MB)
-
-	cli := &BucketLoggingClient{
-		downloadCaptureClient: dlcli,
-	}
-
-	bucket := s3io.NewRawBucket("testing", s3io.DefaultChunkSize, s3io.DefaultChunkSize, 1, noopLogger, cli)
-
-	buf := &bytes.Buffer{}
-	_, err := bucket.WriteTo(
-		ctx,
-		"path/to/item",
-		buf,
-		s3io.WithReaderConcurrency(1),
-	)
-	if err != nil {
-		t.Fatalf("unable to write to: %v", err)
-	}
-
-	if e, a := len(buf12MB), buf.Len(); e != a {
-		t.Errorf("expected %d but got %d", e, a)
-	}
-
-	if e, a := 4, *invocations; e != a {
-		t.Errorf("expect %v API calls, got %v", e, a)
-	}
-
-	expectRngs := []string{"bytes=0-0", "bytes=0-5242880", "bytes=5242881-10485761", "bytes=10485762-12582912"}
-	if e, a := expectRngs, *ranges; !reflect.DeepEqual(e, a) {
-		t.Errorf("expect %v ranges, got %v", e, a)
-	}
-}
-
 func TestDelete(t *testing.T) {
 	cli := &BucketLoggingClient{}
 
-	bucket := s3io.NewRawBucket("testing", s3io.DefaultChunkSize, s3io.DefaultChunkSize, 1, noopLogger, cli)
+	bucket := s3io.New("testing", s3io.DefaultChunkSize, s3io.DefaultChunkSize, 1, slog.New(slog.DiscardHandler), cli)
 
 	itemsToDelete := []string{"test1.txt", "test2.txt", "test3.txt"}
 
