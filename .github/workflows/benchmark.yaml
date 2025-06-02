@@ -19,7 +19,7 @@ jobs:
       AWS_S3_ENDPOINT: "http://localhost:9000"
     services:
       minio:
-        image: bitnami/minio
+        image: bitnami/minio:2025.4.3
         env:
           MINIO_ROOT_USER: "accessKey"
           MINIO_ROOT_PASSWORD: "secretKey"
