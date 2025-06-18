@@ -30,7 +30,12 @@ var (
 func TestReadWrite(t *testing.T) {
 	t.Parallel()
 
-	bucket, err := getTestBucket()
+	s3Cli, err := getTestS3Client()
+	if err != nil {
+		t.Fatalf("error getting test manager")
+	}
+
+	bucket, err := getTestBucket(s3Cli)
 	if err != nil {
 		t.Fatalf("error getting test bucket: %v", err)
 	}
@@ -45,12 +50,12 @@ func TestReadWrite(t *testing.T) {
 func BenchmarkAgainstManager(b *testing.B) {
 	ctx := b.Context()
 
-	s3Cli, err := getTestManager()
+	s3Cli, err := getTestS3Client()
 	if err != nil {
 		b.Fatalf("error getting test manager")
 	}
 
-	bucket, err := getTestBucket()
+	bucket, err := getTestBucket(s3Cli)
 	if err != nil {
 		b.Fatalf("error getting test bucket: %v", err)
 	}
@@ -120,7 +125,12 @@ func TestLocalReadWrite(t *testing.T) {
 
 	ctx := t.Context()
 
-	bucket, err := getTestBucket()
+	s3Cli, err := getTestS3Client()
+	if err != nil {
+		t.Fatalf("error getting test manager")
+	}
+
+	bucket, err := getTestBucket(s3Cli)
 	if err != nil {
 		t.Errorf("error getting test bucket: %v", err)
 		return
@@ -209,12 +219,8 @@ func testFile(t *testing.T, bucket s3io.Bucket, testName, filename string, src i
 	})
 }
 
-func getTestBucket() (s3io.Bucket, error) {
-	region := envOrDefault("AWS_REGION", "local")
+func getTestBucket(cli *s3.Client) (s3io.Bucket, error) {
 	bucketName := envOrDefault("AWS_BUCKET_NAME", "jobbitz-testing")
-	accessKey := envOrDefault("AWS_ACCESS_KEY_ID", "access_key")
-	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
-	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 
 	logger := slog.New(slog.DiscardHandler)
 	if withDebug := os.Getenv("DEBUG_LOG"); withDebug != "" {
@@ -229,38 +235,35 @@ func getTestBucket() (s3io.Bucket, error) {
 
 	bucket, err := s3io.Open(context.Background(),
 		bucketName,
-		s3io.WithBucketHost(endpoint, region, true),
-		s3io.WithBucketCredentials(accessKey, secretKey),
+		s3io.WithBucketCli(cli),
 		s3io.WithBucketRetries(3),
 		s3io.WithBucketCreateIfNotExists(),
 		s3io.WithBucketLogger(logger),
-		s3io.WithBucketS3Options(func(opt *s3.Options) {
-			opt.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
-			opt.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
-		}),
 	)
 
 	return bucket, err
 }
 
-func getTestManager() (*s3.Client, error) {
+func getTestS3Client() (*s3.Client, error) {
 	region := envOrDefault("AWS_REGION", "local")
 	accessKey := envOrDefault("AWS_ACCESS_KEY_ID", "access_key")
 	secretKey := envOrDefault("AWS_SECRET_ACCESS_KEY", "secret_key")
 	endpoint := envOrDefault("AWS_S3_ENDPOINT", "http://localhost:9000")
 
-	cfg, err := config.LoadDefaultConfig(context.Background(), func(cfg *config.LoadOptions) error {
-		cfg.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
-		cfg.BaseEndpoint = endpoint
-		cfg.Region = region
-
-		return nil
-	})
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithBaseEndpoint(endpoint),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	cli := s3.NewFromConfig(cfg)
+	cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+	})
 
 	return cli, nil
 }
