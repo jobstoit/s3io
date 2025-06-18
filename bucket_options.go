@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -147,11 +146,10 @@ func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
 	return func(b *bucketBuilder) {
 		b.cliOpts = append(b.cliOpts,
 			config.WithRegion(region),
+			config.WithBaseEndpoint(url),
 		)
 
 		b.s3Opts = append(b.s3Opts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(url)
-			o.Region = region
 			o.UsePathStyle = true
 		})
 	}
