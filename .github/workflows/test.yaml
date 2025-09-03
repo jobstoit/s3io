@@ -17,7 +17,7 @@ jobs:
       AWS_S3_ENDPOINT: "http://localhost:9000"
     services:
       minio:
-        image: minio/minio
+        image: minio/minio:latest-cicd
         env:
           MINIO_ROOT_USER: "accessKey"
           MINIO_ROOT_PASSWORD: "secretKey"
@@ -26,7 +26,7 @@ jobs:
         ports:
           - 9000:9000
         options: |
-          --health-cmd="mc ready local" --entrypoint="/usr/bin/docker-entrypoint.sh minio server /data"
+          --health-cmd="mc ready local"
 
     steps:
       - uses: actions/checkout@v3
