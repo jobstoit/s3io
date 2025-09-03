@@ -17,13 +17,17 @@ jobs:
       AWS_S3_ENDPOINT: "http://localhost:9000"
     services:
       minio:
-        image: bitnami/minio:2025.4.3
+        image: minio/minio
         env:
           MINIO_ROOT_USER: "accessKey"
           MINIO_ROOT_PASSWORD: "secretKey"
+        volumes:
+          - data:/data
         ports:
           - 9000:9000
-        options: --health-cmd="curl http://localhost:9000/minio/health/live"
+        options: |
+          --health-cmd="mc ready local" --entrypoint="/usr/bin/docker-entrypoint.sh minio server /data"
+
     steps:
       - uses: actions/checkout@v3
 
