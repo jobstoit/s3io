@@ -20,7 +20,7 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
       - name: Approve and auto merge a PR
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        if: contains(steps.metadata.outputs.dependency-names, 'github.com/aws/aws-sdk-go-v2/feature/s3/manager') && steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: |
           gh pr review --approve "$PR_URL" && \
           gh pr merge --auto --squash "$PR_URL"
