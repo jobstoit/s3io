@@ -3,7 +3,7 @@ module github.com/jobstoit/s3io/v3
 go 1.24
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.39.3
+	github.com/aws/aws-sdk-go-v2 v1.39.4
 	github.com/aws/aws-sdk-go-v2/config v1.31.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.18
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.19.14
