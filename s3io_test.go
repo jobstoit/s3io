@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jobstoit/s3io/v3"
 )
@@ -29,6 +29,10 @@ var (
 
 func TestReadWrite(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping for short tests")
+	}
 
 	s3Cli, err := getTestS3Client()
 	if err != nil {
@@ -66,7 +70,7 @@ func BenchmarkAgainstManager(b *testing.B) {
 
 	b.Run("fs upload", func(b *testing.B) {
 		wr := bucket.Put(ctx, fileName, s3io.WithWriterLogger(slog.New(slog.DiscardHandler)))
-		defer wr.Close()
+		defer wr.Close() //nolint: errcheck
 
 		_, err = io.Copy(wr, io.LimitReader(rand.Reader, fileSize))
 		if err != nil {
@@ -79,9 +83,9 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("manager upload", func(b *testing.B) {
-		uploader := manager.NewUploader(s3Cli)
+		uploadermanager := transfermanager.New(s3Cli)
 
-		_, err := uploader.Upload(b.Context(), &s3.PutObjectInput{
+		_, err := uploadermanager.UploadObject(b.Context(), &transfermanager.UploadObjectInput{
 			Bucket: &bucketName,
 			Key:    aws.String(fileName),
 			Body:   io.LimitReader(rand.Reader, fileSize),
@@ -102,15 +106,20 @@ func BenchmarkAgainstManager(b *testing.B) {
 	})
 
 	b.Run("manager download", func(b *testing.B) {
-		downloader := manager.NewDownloader(s3Cli)
+		file, err := os.OpenFile(path.Join(b.TempDir(), fileName), os.O_CREATE|os.O_WRONLY, 0o755)
+		if err != nil {
+			b.Errorf("unable to create temp file: %v", err)
+			b.FailNow()
+		}
 
-		buf := manager.NewWriteAtBuffer(make([]byte, fileSize))
-		_, err := downloader.Download(b.Context(), buf, &s3.GetObjectInput{
-			Bucket: &bucketName,
-			Key:    aws.String(fileName),
+		downloadermanager := transfermanager.New(s3Cli)
+		_, err = downloadermanager.DownloadObject(b.Context(), &transfermanager.DownloadObjectInput{
+			Bucket:   &bucketName,
+			Key:      aws.String(fileName),
+			WriterAt: file,
 		})
 		if err != nil {
-			b.Errorf("error reading object: %v", err)
+			b.Errorf("unable to read file: %v", err)
 		}
 	})
 }
@@ -141,7 +150,7 @@ func TestLocalReadWrite(t *testing.T) {
 		t.Errorf("error opening localfile '%s': %v", localFile, err)
 		return
 	}
-	defer srcFile.Close()
+	defer srcFile.Close() //nolint: errcheck
 
 	fileName := path.Base(localFile)
 	dest := path.Join("data", fileName)
@@ -163,7 +172,7 @@ func TestLocalReadWrite(t *testing.T) {
 
 	rd := bucket.Get(ctx, dest)
 
-	destFile, err := os.OpenFile(localDest, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0777)
+	destFile, err := os.OpenFile(localDest, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o777)
 	if err != nil {
 		t.Fatalf("error opening local dest file: %v", err)
 	}
