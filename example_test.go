@@ -19,9 +19,6 @@ func ExampleReader_Read() {
 	}
 
 	rd := bucket.Get(ctx, "path/to/object.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	if _, err := io.Copy(os.Stdout, rd); err != nil {
 		log.Fatal(err)
@@ -40,9 +37,6 @@ func ExampleWriter_Write() {
 	}
 
 	wr := bucket.Put(ctx, "path/to/object.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	if _, err := io.WriteString(wr, "hello world"); err != nil {
 		log.Fatal(err)

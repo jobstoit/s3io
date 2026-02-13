@@ -30,6 +30,8 @@ func TestImplementIOReader(t *testing.T) {
 }
 
 func TestReaderSinglePart(t *testing.T) {
+	t.Parallel()
+
 	c, invocations, ranges := newDownloadRangeClient(buf2MB)
 
 	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{
@@ -57,6 +59,8 @@ func TestReaderSinglePart(t *testing.T) {
 }
 
 func TestReaderMultiPart(t *testing.T) {
+	t.Parallel()
+
 	c, invocations, ranges := newDownloadRangeClient(buf12MB)
 
 	rd := s3io.NewReader(t.Context(), c, &s3.GetObjectInput{

@@ -140,7 +140,7 @@ func (r *Reader) Stat() (fs.FileInfo, error) {
 	return fi, nil
 }
 
-// close is the io.Close implementation for the ObjectReader
+// Close is the io.Close implementation for the ObjectReader
 func (r *Reader) Close() error {
 	if r.closed.CompareAndSwap(false, true) && r.rd != nil {
 		r.rd.CloseWithError(io.EOF)
@@ -225,10 +225,7 @@ func (r *Reader) getChunk(
 	cl.Lock()
 	defer cl.Unlock()
 
-	end := start + int64(r.chunkSize)
-	if end > contentLen {
-		end = contentLen
-	}
+	end := min(start+int64(r.chunkSize), contentLen)
 
 	nextLock := make(chan struct{}, 1)
 	defer close(nextLock)
@@ -241,7 +238,7 @@ func (r *Reader) getChunk(
 		return
 	}
 
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint: errcheck
 
 	select {
 	case <-ctx.Done():
