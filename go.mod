@@ -3,12 +3,12 @@ module github.com/jobstoit/s3io/v3
 go 1.24
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.41.5
+	github.com/aws/aws-sdk-go-v2 v1.41.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.15
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.16
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
-	github.com/aws/smithy-go v1.24.2
+	github.com/aws/smithy-go v1.25.0
 )
 
 require (
