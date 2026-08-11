@@ -89,8 +89,7 @@ func (r *Reader) Stat() (fs.FileInfo, error) {
 
 	res, err := r.s3.GetObject(ctx, &input, r.clientOptions...)
 	if err != nil {
-		var apiError smithy.APIError
-		if errors.As(err, &apiError) {
+		if apiError, ok := errors.AsType[smithy.APIError](err); ok {
 			switch apiError.(type) {
 			case *types.NotFound:
 				return nil, fs.ErrNotExist
@@ -248,7 +247,8 @@ func (r *Reader) getChunk(
 			wr.CloseWithError(err)
 		}
 
-		r.logger.DebugContext(ctx, "chunk read",
+		r.logger.DebugContext(
+			ctx, "chunk read",
 			slog.Group("chunk", slog.Int64("start", start), slog.Int64("end", end), slog.Int64("content_lenght", contentLen)),
 		)
 	}

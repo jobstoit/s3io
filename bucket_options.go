@@ -103,8 +103,7 @@ func bucketExists(ctx context.Context, cli *s3.Client, name string) (bool, error
 		Bucket: &name,
 	})
 	if err != nil {
-		var apiError smithy.APIError
-		if errors.As(err, &apiError) {
+		if apiError, ok := errors.AsType[smithy.APIError](err); ok {
 			switch apiError.(type) {
 			case *types.NotFound:
 				return false, nil
@@ -144,7 +143,8 @@ func WithBucketS3Options(opts ...func(*s3.Options)) BucketOption {
 // Only works if the cli is not already provided.
 func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
 	return func(b *bucketBuilder) {
-		b.cliOpts = append(b.cliOpts,
+		b.cliOpts = append(
+			b.cliOpts,
 			config.WithRegion(region),
 			config.WithBaseEndpoint(url),
 		)
@@ -159,7 +159,8 @@ func WithBucketHost(url, region string, usePathStyle bool) BucketOption {
 // Only works if the cli is not already provided.
 func WithBucketCredentials(accessKey, secretKey string) BucketOption {
 	return func(b *bucketBuilder) {
-		b.cliOpts = append(b.cliOpts,
+		b.cliOpts = append(
+			b.cliOpts,
 			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		)
 	}
