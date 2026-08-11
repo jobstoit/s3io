@@ -161,8 +161,7 @@ func (b *bucket) Exists(ctx context.Context, key string) (bool, error) {
 	}
 
 	if _, err := b.cli.HeadObject(ctx, input); err != nil {
-		var apiError smithy.APIError
-		if errors.As(err, &apiError) {
+		if apiError, ok := errors.AsType[smithy.APIError](err); ok {
 			switch apiError.(type) {
 			case *types.NotFound:
 				return false, nil
